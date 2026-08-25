@@ -9,12 +9,15 @@ import {
 import { sb } from '@/lib/supabase/client';
 import { useProfile } from '@/lib/hooks';
 import { consumeNumber, loadInvoice, logActivity } from '@/lib/invoice-service';
+import { setInvoicePaidStatus } from '@/lib/invoice-status';
 import type { Invoice, Payment } from '@/lib/types';
 import { PAYMENT_MODES } from '@/lib/types';
 import { fmtDate, fmtDateLong, money, todayISO } from '@/lib/format';
+import { netExpected } from '@/lib/payments';
 import InvoicePaper from '@/components/InvoicePaper';
+import RecordPaymentModal from '@/components/RecordPaymentModal';
 import {
-  Card, Field, Input, Loading, Modal, Select, StatusPill, Textarea, Toggle, toast, useConfirm, Spinner,
+  Card, Field, Input, Loading, Modal, StatusPill, Textarea, Toggle, toast, useConfirm, Spinner,
 } from '@/components/ui';
 
 export default function InvoiceDetail({ params }: { params: { id: string } }) {
@@ -27,7 +30,6 @@ export default function InvoiceDetail({ params }: { params: { id: string } }) {
   const [busy, setBusy] = useState('');
 
   const [payOpen, setPayOpen] = useState(false);
-  const [pay, setPay] = useState({ payment_date: todayISO(), amount: 0, mode: 'bank_transfer', reference: '', tds_deducted: 0, bank_charges: 0, notes: '' });
   const [sendOpen, setSendOpen] = useState(false);
   const [mail, setMail] = useState({ to: '', cc: '', subject: '', message: '', attach: true });
 
@@ -59,19 +61,6 @@ export default function InvoiceDetail({ params }: { params: { id: string } }) {
     if (error) return toast(error.message, 'error');
     await logActivity('invoice', inv!.id, status, note);
     toast(note ?? 'Updated'); refresh();
-  }
-
-  async function savePayment() {
-    if (!pay.amount || pay.amount <= 0) return toast('Enter an amount', 'error');
-    setBusy('pay');
-    const { error } = await sb().from('payments').insert({
-      invoice_id: inv!.id, client_id: inv!.client_id, currency: inv!.currency,
-      exchange_rate: inv!.exchange_rate, ...pay,
-    });
-    setBusy('');
-    if (error) return toast(error.message, 'error');
-    await logActivity('payment', inv!.id, 'recorded', `${money(pay.amount, inv!.currency)} via ${pay.mode}`);
-    toast('Payment recorded'); setPayOpen(false); refresh();
   }
 
   async function deletePayment(p: Payment) {
@@ -198,17 +187,34 @@ export default function InvoiceDetail({ params }: { params: { id: string } }) {
             </div>
             <dl className="mt-4 space-y-1.5 border-t border-line pt-3 text-[12.5px]">
               <div className="flex justify-between"><dt className="text-chrome">Total</dt><dd className="font-mono text-white">{money(inv.total, inv.currency)}</dd></div>
-              {!isQuote && <div className="flex justify-between"><dt className="text-chrome">Received</dt><dd className="font-mono text-emerald-300">{money(inv.amount_paid, inv.currency)}</dd></div>}
-              {inv.tds_applicable && Number(inv.tds_amount) > 0 && (
+              {!isQuote && Number(inv.tds_amount) > 0 && (
                 <div className="flex justify-between"><dt className="text-chrome">TDS {inv.tds_section}</dt><dd className="font-mono text-chrome-light">{money(inv.tds_amount, inv.currency)}</dd></div>)}
+              {!isQuote && (
+                <div className="flex justify-between"><dt className="text-chrome">Net expected in bank</dt><dd className="font-mono text-amber-300">{money(netExpected(inv), inv.currency)}</dd></div>)}
+              {!isQuote && <div className="flex justify-between"><dt className="text-chrome">Received (bank)</dt><dd className="font-mono text-emerald-300">{money(inv.amount_paid, inv.currency)}</dd></div>}
               {inv.currency !== 'INR' && (
                 <div className="flex justify-between"><dt className="text-chrome">In INR</dt><dd className="font-mono text-chrome-light">{money(Number(inv.total) * Number(inv.exchange_rate))}</dd></div>)}
             </dl>
 
             <div className="mt-4 grid gap-2">
               {!isQuote && balance > 0.5 && (
-                <button className="btn-primary w-full" onClick={() => { setPay({ ...pay, amount: balance, tds_deducted: Number(inv.tds_amount) || 0 }); setPayOpen(true); }}>
+                <button className="btn-primary w-full" onClick={() => setPayOpen(true)}>
                   <IndianRupee size={15} /> Record payment
+                </button>
+              )}
+              {!isQuote && inv.status === 'paid' && (
+                <button className="btn-ghost w-full" onClick={async () => {
+                  if (!(await confirm(`Mark ${inv.invoice_number} unpaid? This removes recorded payments.`))) return;
+                  setBusy('unpay');
+                  try {
+                    await setInvoicePaidStatus(sb(), inv, false);
+                    toast(`${inv.invoice_number} marked unpaid`);
+                    refresh();
+                  } catch (e) {
+                    toast(e instanceof Error ? e.message : 'Could not update', 'error');
+                  } finally { setBusy(''); }
+                }} disabled={busy === 'unpay'}>
+                  {busy === 'unpay' ? <Spinner /> : 'Mark unpaid'}
                 </button>
               )}
               {inv.status === 'draft' && (
@@ -282,38 +288,12 @@ export default function InvoiceDetail({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {/* ------------------------------ payment modal ------------------------------ */}
-      <Modal open={payOpen} onClose={() => setPayOpen(false)} title="Record a payment" width="max-w-lg"
-        subtitle={`${inv.invoice_number} · balance ${money(balance, inv.currency)}`}
-        footer={<><button className="btn-ghost" onClick={() => setPayOpen(false)}>Cancel</button>
-          <button className="btn-primary" onClick={savePayment} disabled={busy === 'pay'}>{busy === 'pay' ? <Spinner /> : 'Save payment'}</button></>}>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Amount received" required>
-            <Input type="number" step="0.01" className="input-mono" value={pay.amount} onChange={(e) => setPay({ ...pay, amount: Number(e.target.value) })} />
-          </Field>
-          <Field label="Payment date"><Input type="date" value={pay.payment_date} onChange={(e) => setPay({ ...pay, payment_date: e.target.value })} /></Field>
-          <Field label="Mode">
-            <Select value={pay.mode} onChange={(e) => setPay({ ...pay, mode: e.target.value })}>
-              {PAYMENT_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-            </Select>
-          </Field>
-          <Field label="Reference / UTR"><Input className="input-mono" value={pay.reference} onChange={(e) => setPay({ ...pay, reference: e.target.value })} /></Field>
-          <Field label="TDS withheld by client" hint="For your 26AS reconciliation">
-            <Input type="number" step="0.01" className="input-mono" value={pay.tds_deducted} onChange={(e) => setPay({ ...pay, tds_deducted: Number(e.target.value) })} />
-          </Field>
-          <Field label="Bank charges" hint="Deducted on inward wires">
-            <Input type="number" step="0.01" className="input-mono" value={pay.bank_charges} onChange={(e) => setPay({ ...pay, bank_charges: Number(e.target.value) })} />
-          </Field>
-          <Field label="Notes" className="sm:col-span-2"><Input value={pay.notes} onChange={(e) => setPay({ ...pay, notes: e.target.value })} /></Field>
-          {pay.tds_deducted > 0 && (
-            <p className="sm:col-span-2 rounded-lg border border-line bg-ink-800/60 px-3 py-2 text-[11.5px] text-chrome">
-              Recording {money(pay.amount, inv.currency)} received with {money(pay.tds_deducted, inv.currency)} TDS.
-              Remaining balance after this: {money(balance - pay.amount, inv.currency)}.
-              If the client withheld TDS, record the payment as the net amount received and log the TDS here.
-            </p>
-          )}
-        </div>
-      </Modal>
+      <RecordPaymentModal
+        invoice={inv}
+        open={payOpen}
+        onClose={() => setPayOpen(false)}
+        onSaved={() => refresh()}
+      />
 
       {/* ------------------------------ send modal ------------------------------ */}
       <Modal open={sendOpen} onClose={() => setSendOpen(false)} title={`Send ${inv.invoice_number}`}

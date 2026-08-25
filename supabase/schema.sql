@@ -437,25 +437,54 @@ as $$
 $$;
 
 -- keep invoice.amount_paid / balance_due / status in sync with payments
+-- Settlement = bank credit + TDS withheld + bank charges, so a TDS invoice
+-- is paid when the LLP statement matches net expected (total − TDS).
 create or replace function recalc_invoice_payment(p_invoice uuid)
 returns void
 language plpgsql
 as $$
-declare v_paid numeric(14,2); v_total numeric(14,2); v_status text; v_due date;
+declare
+  v_bank numeric(14,2);
+  v_tds numeric(14,2);
+  v_charges numeric(14,2);
+  v_settled numeric(14,2);
+  v_total numeric(14,2);
+  v_status text;
+  v_due date;
+  v_sent timestamptz;
+  v_paid_at timestamptz;
 begin
-  select coalesce(sum(amount),0) into v_paid from payments where invoice_id = p_invoice;
-  select total, due_date, status into v_total, v_due, v_status from invoices where id = p_invoice;
-  if v_status in ('cancelled','draft') then
-    update invoices set amount_paid = v_paid, balance_due = v_total - v_paid, updated_at = now() where id = p_invoice;
+  select
+    coalesce(sum(amount), 0),
+    coalesce(sum(tds_deducted), 0),
+    coalesce(sum(bank_charges), 0)
+    into v_bank, v_tds, v_charges
+    from payments where invoice_id = p_invoice;
+  v_settled := v_bank + v_tds + v_charges;
+  select total, due_date, status, sent_at, paid_at
+    into v_total, v_due, v_status, v_sent, v_paid_at
+    from invoices where id = p_invoice;
+
+  if v_status = 'cancelled' then
+    update invoices
+       set amount_paid = v_bank,
+           balance_due = round(v_total - v_settled, 2),
+           updated_at = now()
+     where id = p_invoice;
     return;
   end if;
+
   update invoices
-     set amount_paid = v_paid,
-         balance_due = round(v_total - v_paid, 2),
-         paid_at = case when v_paid >= v_total - 0.5 then now() else null end,
+     set amount_paid = v_bank,
+         balance_due = round(v_total - v_settled, 2),
+         paid_at = case when v_settled >= v_total - 0.5 then coalesce(v_paid_at, now()) else null end,
+         sent_at = case
+           when v_status = 'draft' and v_settled > 0 then coalesce(v_sent, now())
+           else v_sent end,
          status = case
-           when v_paid >= v_total - 0.5 then 'paid'
-           when v_paid > 0 then 'partially_paid'
+           when v_settled >= v_total - 0.5 then 'paid'
+           when v_settled > 0 then 'partially_paid'
+           when v_status = 'draft' then 'draft'
            when v_due is not null and v_due < current_date then 'overdue'
            else 'sent' end,
          updated_at = now()

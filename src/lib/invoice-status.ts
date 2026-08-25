@@ -1,10 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Invoice } from './types';
+import type { Invoice, Payment } from './types';
+import { invoiceSettlement } from './payments';
 
-/** Flip an invoice to Paid or Unpaid. Used from the invoices list and the assistant. */
+/** Flip an invoice to Unpaid, or (for the assistant) record a settling payment. The UI prompts Record payment instead. */
 export async function setInvoicePaidStatus(
   supabase: SupabaseClient,
-  invoice: Pick<Invoice, 'id' | 'doc_type' | 'status' | 'total' | 'amount_paid' | 'client_id' | 'currency' | 'exchange_rate' | 'sent_at' | 'invoice_number'>,
+  invoice: Pick<Invoice, 'id' | 'doc_type' | 'status' | 'total' | 'amount_paid' | 'client_id' | 'currency' | 'exchange_rate' | 'sent_at' | 'invoice_number' | 'tds_amount'>,
   paid: boolean,
   actor?: string | null,
 ) {
@@ -16,28 +17,30 @@ export async function setInvoicePaidStatus(
   const total = Number(invoice.total) || 0;
 
   if (paid) {
+    const { data: existing } = await supabase.from('payments').select('amount, tds_deducted, bank_charges').eq('invoice_id', invoice.id);
+    const s = invoiceSettlement(invoice, (existing ?? []) as Pick<Payment, 'amount' | 'tds_deducted' | 'bank_charges'>[]);
     if (invoice.status === 'draft') {
       const { error } = await supabase.from('invoices').update({
         status: 'sent', sent_at: invoice.sent_at ?? now, updated_at: now,
       }).eq('id', invoice.id);
       if (error) throw error;
     }
-    const remaining = Math.round((total - Number(invoice.amount_paid || 0)) * 100) / 100;
-    if (remaining > 0.5) {
+    if (s.remaining > 0.5) {
       const { error } = await supabase.from('payments').insert({
         invoice_id: invoice.id,
         client_id: invoice.client_id,
         payment_date: today,
-        amount: remaining,
+        amount: s.remainingBank,
+        tds_deducted: s.remainingTds,
         currency: invoice.currency ?? 'INR',
         exchange_rate: Number(invoice.exchange_rate) || 1,
         mode: 'other',
-        notes: 'Marked paid manually',
+        notes: 'Marked paid (assistant)',
       });
       if (error) throw error;
     } else {
       const { error } = await supabase.from('invoices').update({
-        status: 'paid', amount_paid: total, balance_due: 0, paid_at: now, updated_at: now,
+        status: 'paid', balance_due: 0, paid_at: now, updated_at: now,
       }).eq('id', invoice.id);
       if (error) throw error;
     }
