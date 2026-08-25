@@ -3,13 +3,13 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Pencil, Send, Printer, Download, Link2, Copy, Trash2, CheckCircle2,
-  Ban, ArrowRightLeft, IndianRupee, Clock, Mail,
+  Ban, ArrowRightLeft, IndianRupee, Clock, Mail, RotateCcw,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
 import { useProfile } from '@/lib/hooks';
 import { useFilterNav } from '@/lib/list-filters';
 import { consumeNumber, loadInvoice, logActivity } from '@/lib/invoice-service';
-import { setInvoicePaidStatus } from '@/lib/invoice-status';
+import { setInvoicePaidStatus, uncancelInvoice, statusAfterUncancel } from '@/lib/invoice-status';
 import type { Invoice, Payment } from '@/lib/types';
 import { PAYMENT_MODES } from '@/lib/types';
 import { fmtDate, fmtDateLong, money, todayISO } from '@/lib/format';
@@ -17,7 +17,7 @@ import { netExpected } from '@/lib/payments';
 import InvoicePaper from '@/components/InvoicePaper';
 import RecordPaymentModal from '@/components/RecordPaymentModal';
 import {
-  Card, Field, Input, Loading, Modal, StatusPill, Textarea, Toggle, toast, useConfirm, Spinner,
+  Card, Field, Input, Loading, Modal, StatusPill, STATUS_LABEL, Textarea, Toggle, toast, useConfirm, Spinner,
 } from '@/components/ui';
 
 export default function InvoiceDetail({ params }: { params: { id: string } }) {
@@ -133,6 +133,20 @@ export default function InvoiceDetail({ params }: { params: { id: string } }) {
     finally { setBusy(''); }
   }
 
+  async function restore() {
+    const next = statusAfterUncancel(inv!);
+    const label = STATUS_LABEL[next] ?? next;
+    if (!(await confirm(`Restore ${inv!.invoice_number}? It goes back to ${label} — the cancel was only a status, nothing was deleted.`))) return;
+    setBusy('restore');
+    try {
+      await uncancelInvoice(sb(), inv!);
+      toast(`${inv!.invoice_number} restored to ${label}`);
+      refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not restore', 'error');
+    } finally { setBusy(''); }
+  }
+
   async function remove() {
     if (!(await confirm(`Permanently delete ${inv!.invoice_number}? For GST records, cancelling is usually safer than deleting.`))) return;
     const { error } = await sb().from('invoices').delete().eq('id', inv!.id);
@@ -169,7 +183,9 @@ export default function InvoiceDetail({ params }: { params: { id: string } }) {
           <button className="btn-ghost" onClick={() => { navigator.clipboard.writeText(publicUrl); toast('Share link copied'); }}>
             <Link2 size={15} /> Link
           </button>
-          <button className="btn-primary" onClick={openSend}><Send size={15} /> Send</button>
+          {inv.status !== 'cancelled' && (
+            <button className="btn-primary" onClick={openSend}><Send size={15} /> Send</button>
+          )}
         </div>
       </div>
 
@@ -203,38 +219,46 @@ export default function InvoiceDetail({ params }: { params: { id: string } }) {
             </dl>
 
             <div className="mt-4 grid gap-2">
-              {!isQuote && balance > 0.5 && (
-                <button className="btn-primary w-full" onClick={() => setPayOpen(true)}>
-                  <IndianRupee size={15} /> Record payment
+              {inv.status === 'cancelled' ? (
+                <button className="btn-primary w-full" onClick={restore} disabled={busy === 'restore'}>
+                  {busy === 'restore' ? <Spinner /> : <><RotateCcw size={15} /> Restore document</>}
                 </button>
-              )}
-              {!isQuote && inv.status === 'paid' && (
-                <button className="btn-ghost w-full" onClick={async () => {
-                  if (!(await confirm(`Mark ${inv.invoice_number} unpaid? This removes recorded payments.`))) return;
-                  setBusy('unpay');
-                  try {
-                    await setInvoicePaidStatus(sb(), inv, false);
-                    toast(`${inv.invoice_number} marked unpaid`);
-                    refresh();
-                  } catch (e) {
-                    toast(e instanceof Error ? e.message : 'Could not update', 'error');
-                  } finally { setBusy(''); }
-                }} disabled={busy === 'unpay'}>
-                  {busy === 'unpay' ? <Spinner /> : 'Mark unpaid'}
-                </button>
-              )}
-              {inv.status === 'draft' && (
-                <button className="btn-ghost w-full" onClick={() => setStatus('sent', 'Marked as sent')} disabled={busy === 'sent'}>
-                  <CheckCircle2 size={15} /> Mark as sent
-                </button>
-              )}
-              {isQuote && (
+              ) : (
                 <>
-                  <button className="btn-primary w-full" onClick={convertToInvoice} disabled={busy === 'conv'}>
-                    {busy === 'conv' ? <Spinner /> : <><ArrowRightLeft size={15} /> Convert to invoice</>}
-                  </button>
-                  {inv.status !== 'accepted' && <button className="btn-ghost w-full" onClick={() => setStatus('accepted', 'Marked accepted')}>Mark accepted</button>}
-                  {inv.status !== 'declined' && <button className="btn-ghost w-full" onClick={() => setStatus('declined', 'Marked declined')}>Mark declined</button>}
+                  {!isQuote && balance > 0.5 && (
+                    <button className="btn-primary w-full" onClick={() => setPayOpen(true)}>
+                      <IndianRupee size={15} /> Record payment
+                    </button>
+                  )}
+                  {!isQuote && inv.status === 'paid' && (
+                    <button className="btn-ghost w-full" onClick={async () => {
+                      if (!(await confirm(`Mark ${inv.invoice_number} unpaid? This removes recorded payments.`))) return;
+                      setBusy('unpay');
+                      try {
+                        await setInvoicePaidStatus(sb(), inv, false);
+                        toast(`${inv.invoice_number} marked unpaid`);
+                        refresh();
+                      } catch (e) {
+                        toast(e instanceof Error ? e.message : 'Could not update', 'error');
+                      } finally { setBusy(''); }
+                    }} disabled={busy === 'unpay'}>
+                      {busy === 'unpay' ? <Spinner /> : 'Mark unpaid'}
+                    </button>
+                  )}
+                  {inv.status === 'draft' && (
+                    <button className="btn-ghost w-full" onClick={() => setStatus('sent', 'Marked as sent')} disabled={busy === 'sent'}>
+                      <CheckCircle2 size={15} /> Mark as sent
+                    </button>
+                  )}
+                  {isQuote && (
+                    <>
+                      <button className="btn-primary w-full" onClick={convertToInvoice} disabled={busy === 'conv'}>
+                        {busy === 'conv' ? <Spinner /> : <><ArrowRightLeft size={15} /> Convert to invoice</>}
+                      </button>
+                      {inv.status !== 'accepted' && <button className="btn-ghost w-full" onClick={() => setStatus('accepted', 'Marked accepted')}>Mark accepted</button>}
+                      {inv.status !== 'declined' && <button className="btn-ghost w-full" onClick={() => setStatus('declined', 'Marked declined')}>Mark declined</button>}
+                    </>
+                  )}
                 </>
               )}
               <button className="btn-ghost w-full" onClick={duplicate} disabled={busy === 'dup'}>

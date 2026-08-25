@@ -1,6 +1,45 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Invoice, Payment } from './types';
+import type { Invoice, InvoiceStatus, Payment } from './types';
 import { invoiceSettlement } from './payments';
+
+/** Where a cancelled document should land when you undo the cancel. */
+export function statusAfterUncancel(
+  invoice: Pick<Invoice, 'doc_type' | 'amount_paid' | 'total' | 'sent_at' | 'viewed_at'>,
+): InvoiceStatus {
+  if (invoice.doc_type === 'quote') {
+    if (invoice.viewed_at) return 'viewed';
+    if (invoice.sent_at) return 'sent';
+    return 'draft';
+  }
+  const paid = Number(invoice.amount_paid);
+  const total = Number(invoice.total);
+  if (total > 0 && paid >= total - 0.5) return 'paid';
+  if (paid > 0.5) return 'partially_paid';
+  if (invoice.viewed_at) return 'viewed';
+  if (invoice.sent_at) return 'sent';
+  return 'draft';
+}
+
+export async function uncancelInvoice(
+  supabase: SupabaseClient,
+  invoice: Pick<Invoice, 'id' | 'status' | 'doc_type' | 'amount_paid' | 'total' | 'sent_at' | 'viewed_at' | 'invoice_number'>,
+  actor?: string | null,
+) {
+  if (invoice.status !== 'cancelled') throw new Error('This document is not cancelled');
+  const status = statusAfterUncancel(invoice);
+  const now = new Date().toISOString();
+  const { error } = await supabase.from('invoices').update({ status, updated_at: now }).eq('id', invoice.id);
+  if (error) throw error;
+  await supabase.from('activity_log').insert({
+    entity: 'invoice', entity_id: invoice.id,
+    action: 'uncancelled',
+    detail: `${invoice.invoice_number} restored to ${status}`,
+    actor: actor ?? null,
+  });
+  const { data, error: readErr } = await supabase.from('invoices').select('*').eq('id', invoice.id).single();
+  if (readErr) throw readErr;
+  return data as Invoice;
+}
 
 /** Flip an invoice to Unpaid, or (for the assistant) record a settling payment. The UI prompts Record payment instead. */
 export async function setInvoicePaidStatus(

@@ -8,8 +8,8 @@ import { useListFilters } from '@/lib/list-filters';
 import type { DocType, Invoice } from '@/lib/types';
 import { fmtDate, money, moneyShort, downloadCSV, todayISO } from '@/lib/format';
 import { netExpected } from '@/lib/payments';
-import { setInvoicePaidStatus } from '@/lib/invoice-status';
-import { Card, EmptyState, Input, Loading, PageHeader, Select, StatusPill, Tabs, toast, useConfirm } from './ui';
+import { setInvoicePaidStatus, statusAfterUncancel, uncancelInvoice } from '@/lib/invoice-status';
+import { Card, EmptyState, Input, Loading, PageHeader, Select, StatusPill, STATUS_LABEL, Tabs, toast, useConfirm } from './ui';
 import RecordPaymentModal from './RecordPaymentModal';
 
 const LIST_FILTERS = { tab: 'all', q: '', client: '', from: '', to: '' };
@@ -73,6 +73,21 @@ export default function DocumentList({ docType }: { docType: DocType }) {
 
   const label = docType === 'quote' ? 'Quote' : 'Invoice';
   const clientName = (id: string | null) => clients.find((c) => c.id === id)?.company_name ?? '—';
+
+  async function restoreCancelled(r: Invoice) {
+    const next = statusAfterUncancel(r);
+    const nextLabel = STATUS_LABEL[next] ?? next;
+    if (!(await confirm(`Restore ${r.invoice_number}? It goes back to ${nextLabel}.`))) return;
+    setSettling(r.id);
+    try {
+      const raw = rows.find((x) => x.id === r.id) ?? r;
+      const updated = await uncancelInvoice(sb(), raw);
+      setRows((list) => list.map((x) => (x.id === r.id ? updated : x)));
+      toast(`${r.invoice_number} restored to ${nextLabel}`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not restore', 'error');
+    } finally { setSettling(null); }
+  }
 
   async function markUnpaid(r: Invoice) {
     if (!(await confirm(`Mark ${r.invoice_number} unpaid? This removes recorded payments from the invoice.`))) return;
@@ -138,12 +153,14 @@ export default function DocumentList({ docType }: { docType: DocType }) {
             ? [{ key: 'all', label: 'All', count: scoped.length },
                { key: 'draft', label: 'Draft', count: tabCount((r) => r.status === 'draft') },
                { key: 'sent', label: 'Sent', count: tabCount((r) => r.status === 'sent') },
-               { key: 'accepted', label: 'Accepted', count: tabCount((r) => r.status === 'accepted') }]
+               { key: 'accepted', label: 'Accepted', count: tabCount((r) => r.status === 'accepted') },
+               { key: 'cancelled', label: 'Cancelled', count: tabCount((r) => r.status === 'cancelled') }]
             : [{ key: 'all', label: 'All', count: scoped.length },
                { key: 'draft', label: 'Drafts', count: tabCount((r) => r.status === 'draft') },
                { key: 'unpaid', label: 'Unpaid', count: tabCount((r) => ['sent', 'viewed', 'overdue', 'partially_paid'].includes(r.status)) },
                { key: 'overdue', label: 'Overdue', count: tabCount((r) => r.status === 'overdue') },
-               { key: 'paid', label: 'Paid', count: tabCount((r) => r.status === 'paid') }]
+               { key: 'paid', label: 'Paid', count: tabCount((r) => r.status === 'paid') },
+               { key: 'cancelled', label: 'Cancelled', count: tabCount((r) => r.status === 'cancelled') }]
         } />
       </div>
 
@@ -179,6 +196,12 @@ export default function DocumentList({ docType }: { docType: DocType }) {
                       <td className="td">
                         <div className="flex flex-wrap items-center gap-1">
                           <StatusPill status={r.status} />
+                          {r.status === 'cancelled' && (
+                            <button type="button" className="btn-primary btn-xs" disabled={settling === r.id}
+                              onClick={() => restoreCancelled(r)}>
+                              {settling === r.id ? <Loader2 size={13} className="animate-spin" /> : 'Restore'}
+                            </button>
+                          )}
                           {docType === 'invoice' && r.status !== 'cancelled' && (
                             r.status === 'paid' ? (
                               <button type="button" className="btn-subtle btn-xs" disabled={settling === r.id}
