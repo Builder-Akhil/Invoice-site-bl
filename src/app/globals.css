@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+
+@layer base {
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    @apply bg-ink text-[#E7E9EE] font-sans antialiased;
+    background-image:
+      radial-gradient(900px 500px at 12% -8%, rgba(11,63,222,.16), transparent 60%),
+      radial-gradient(700px 420px at 92% 0%, rgba(122,130,150,.10), transparent 62%);
+    background-attachment: fixed;
+  }
+  ::selection { background: #0B3FDE; color: #fff; }
+  input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(.7); cursor: pointer; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #262A33; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: #39404f; background-clip: content-box; }
+}
+
+@layer components {
+  .label-mono { @apply font-mono text-[10.5px] uppercase tracking-[0.14em] text-chrome; }
+  .card { @apply rounded-xl border border-line bg-ink-700/70 backdrop-blur-sm shadow-card; }
+  .card-pad { @apply p-5; }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 h-9 text-[13.5px] font-semibold
+           transition-all duration-150 whitespace-nowrap disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .btn-primary { @apply btn bg-blue text-white hover:bg-blue-400 shadow-[0_6px_20px_-8px_rgba(11,63,222,.9)]; }
+  .btn-ghost   { @apply btn border border-line bg-ink-600/60 text-[#C9CEDA] hover:border-chrome-dark hover:text-white; }
+  .btn-subtle  { @apply btn text-chrome hover:text-white hover:bg-ink-500; }
+  .btn-danger  { @apply btn border border-red-900/60 bg-red-950/40 text-red-300 hover:bg-red-900/40; }
+  .btn-sm { @apply h-8 px-3 text-[12.5px]; }
+  .btn-xs { @apply h-7 px-2.5 text-[11.5px] rounded-md; }
+
+  .input {
+    @apply w-full rounded-lg border border-line bg-ink-800/80 px-3 h-9 text-[13.5px] text-white
+           placeholder:text-chrome-dark outline-none transition
+           focus:border-blue focus:ring-2 focus:ring-blue/25;
+  }
+  textarea.input { @apply h-auto py-2 leading-relaxed; }
+  select.input { @apply pr-8 appearance-none bg-[url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%2712%27%20height%3D%2712%27%20fill%3D%27none%27%20stroke%3D%27%237A8296%27%20stroke-width%3D%271.6%27%3E%3Cpath%20d%3D%27M2%204.5L6%208.5L10%204.5%27%2F%3E%3C%2Fsvg%3E")] bg-[length:12px] bg-[right_10px_center] bg-no-repeat; }
+  .input-mono { @apply font-mono tabular-nums; }
+  .field-label { @apply block text-[11.5px] font-semibold text-chrome mb-1.5; }
+
+  .th { @apply px-3 py-2.5 text-left label-mono font-medium whitespace-nowrap; }
+  .td { @apply px-3 py-3 text-[13.5px] align-middle border-t border-line/70; }
+  .row-link { @apply hover:bg-ink-600/60 transition-colors cursor-pointer; }
+
+  .pill { @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide; }
+  .nav-item {
+    @apply flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] font-medium text-[#9AA2B3]
+           transition-colors hover:bg-ink-600 hover:text-white;
+  }
+  .nav-item-active { @apply bg-blue/12 text-white ring-1 ring-inset ring-blue/35; }
+  .kpi-value { @apply font-display text-[34px] leading-none text-white; }
+  .link { @apply text-blue-300 hover:text-blue-200 underline underline-offset-2 decoration-blue/40; }
+}
+
+/* --- paper: invoice preview + print ------------------------------------- */
+.paper {
+  background: #ffffff; color: #1A1D24;
+  font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
+}
+.paper .brandblue { color: #0B3FDE; }
+
+@media print {
+  @page { size: A4; margin: 12mm; }
+  html, body { background: #fff !important; }
+  .no-print { display: none !important; }
+  .print-full { position: static !important; width: 100% !important; max-width: none !important;
+                margin: 0 !important; padding: 0 !important; box-shadow: none !important; border: 0 !important; }
+  .paper { box-shadow: none !important; }
+}
+
+.scroll-x { overflow-x: auto; }
+.animate-in { animation: fade-up .28s ease-out both; }

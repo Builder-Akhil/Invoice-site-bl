@@ -1,0 +1,15 @@
+node_modules
+.next
+out
+.env
+.env.*
+!.env.example
+.DS_Store
+*.tsbuildinfo
+.vercel
+
+# Zoho exports — real client emails, GSTINs, invoices. Keep local only.
+Contacts.csv
+Invoice.csv
+
+.cursor
