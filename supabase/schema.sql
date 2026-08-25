@@ -380,6 +380,11 @@ create table if not exists recurring_expenses (
 create index if not exists recurring_expenses_next_idx on recurring_expenses (next_run_date);
 
 alter table company_profile add column if not exists cash_on_hand numeric(14,2);
+alter table company_profile add column if not exists sac_codes jsonb not null default '[
+  {"code":"998313","tag":"Advisory","label":"IT consulting & advisory"},
+  {"code":"998314","tag":"IT design","label":"IT design & development"},
+  {"code":"999293","tag":"Training","label":"Training & coaching"}
+]'::jsonb;
 
 -- ---------------------------------------------------------------------------
 -- 9. ACTIVITY LOG

@@ -42,11 +42,9 @@ export default function DocumentList({ docType }: { docType: DocType }) {
       ? 'overdue' : r.status) as Invoice['status'],
   })), [rows, today]);
 
-  const filtered = useMemo(() => {
+  const scoped = useMemo(() => {
     const s = q.trim().toLowerCase();
     return decorated.filter((r) => {
-      if (tab === 'unpaid' && !['sent', 'viewed', 'overdue', 'partially_paid'].includes(r.status)) return false;
-      if (tab !== 'all' && tab !== 'unpaid' && r.status !== tab) return false;
       if (clientId && r.client_id !== clientId) return false;
       if (from && r.invoice_date < from) return false;
       if (to && r.invoice_date > to) return false;
@@ -54,7 +52,15 @@ export default function DocumentList({ docType }: { docType: DocType }) {
       const name = clients.find((c) => c.id === r.client_id)?.company_name ?? '';
       return [r.invoice_number, r.subject, name].some((v) => (v ?? '').toLowerCase().includes(s));
     });
-  }, [decorated, tab, q, clientId, from, to, clients]);
+  }, [decorated, q, clientId, from, to, clients]);
+
+  const filtered = useMemo(() => scoped.filter((r) => {
+    if (tab === 'unpaid' && !['sent', 'viewed', 'overdue', 'partially_paid'].includes(r.status)) return false;
+    if (tab !== 'all' && tab !== 'unpaid' && r.status !== tab) return false;
+    return true;
+  }), [scoped, tab]);
+
+  const tabCount = (pred: (r: typeof scoped[number]) => boolean) => scoped.filter(pred).length;
 
   const inr = (r: Invoice, f: keyof Invoice) => Number(r[f]) * (Number(r.exchange_rate) || 1);
   const outstanding = filtered.filter((r) => r.status !== 'cancelled' && r.status !== 'draft')
@@ -129,15 +135,15 @@ export default function DocumentList({ docType }: { docType: DocType }) {
       <div className="mb-4">
         <Tabs active={tab} onChange={(k) => set('tab', k)} tabs={
           docType === 'quote'
-            ? [{ key: 'all', label: 'All', count: decorated.length },
-               { key: 'draft', label: 'Draft', count: decorated.filter((r) => r.status === 'draft').length },
-               { key: 'sent', label: 'Sent', count: decorated.filter((r) => r.status === 'sent').length },
-               { key: 'accepted', label: 'Accepted', count: decorated.filter((r) => r.status === 'accepted').length }]
-            : [{ key: 'all', label: 'All', count: decorated.length },
-               { key: 'draft', label: 'Drafts', count: decorated.filter((r) => r.status === 'draft').length },
-               { key: 'unpaid', label: 'Unpaid', count: decorated.filter((r) => ['sent', 'viewed', 'overdue', 'partially_paid'].includes(r.status)).length },
-               { key: 'overdue', label: 'Overdue', count: decorated.filter((r) => r.status === 'overdue').length },
-               { key: 'paid', label: 'Paid', count: decorated.filter((r) => r.status === 'paid').length }]
+            ? [{ key: 'all', label: 'All', count: scoped.length },
+               { key: 'draft', label: 'Draft', count: tabCount((r) => r.status === 'draft') },
+               { key: 'sent', label: 'Sent', count: tabCount((r) => r.status === 'sent') },
+               { key: 'accepted', label: 'Accepted', count: tabCount((r) => r.status === 'accepted') }]
+            : [{ key: 'all', label: 'All', count: scoped.length },
+               { key: 'draft', label: 'Drafts', count: tabCount((r) => r.status === 'draft') },
+               { key: 'unpaid', label: 'Unpaid', count: tabCount((r) => ['sent', 'viewed', 'overdue', 'partially_paid'].includes(r.status)) },
+               { key: 'overdue', label: 'Overdue', count: tabCount((r) => r.status === 'overdue') },
+               { key: 'paid', label: 'Paid', count: tabCount((r) => r.status === 'paid') }]
         } />
       </div>
 

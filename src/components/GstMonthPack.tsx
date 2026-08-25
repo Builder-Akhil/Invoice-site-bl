@@ -21,18 +21,12 @@ function LineTable({
 }) {
   return (
     <div className="scroll-x">
-      <table className="w-full min-w-[820px]">
+      <table className="w-full min-w-[640px]">
         <thead><tr className="bg-ink-800/60">
           <th className="th">Invoice</th>
           <th className="th">Client</th>
-          <th className="th">GSTIN</th>
-          <th className="th">Treatment</th>
-          <th className="th">Invoiced</th>
           <th className="th">{collectedLabel ?? 'Paid on'}</th>
-          <th className="th text-right">Taxable</th>
-          <th className="th text-right">CGST</th>
-          <th className="th text-right">SGST</th>
-          <th className="th text-right">IGST</th>
+          <th className="th text-right">Before tax</th>
           <th className="th text-right">GST</th>
         </tr></thead>
         <tbody>
@@ -42,17 +36,15 @@ function LineTable({
                 <Link href={`/invoices/${l.invoice.id}`} className="font-mono text-[12.5px] text-white hover:text-blue-200">
                   {l.invoice.invoice_number}
                 </Link>
+                {l.gstin && <span className="mt-0.5 block font-mono text-[10.5px] text-chrome-dark">{l.gstin}</span>}
                 {extra?.(l)}
               </td>
-              <td className="td text-[12.5px] text-[#C9CEDA]">{l.clientName}</td>
-              <td className="td font-mono text-[11.5px] text-chrome">{l.gstin || '—'}</td>
-              <td className="td text-[11.5px] text-chrome">{SHARE_KIND_LABEL[l.kind]}</td>
-              <td className="td text-[12px] text-chrome">{fmtDate(l.invoiceDate)}</td>
+              <td className="td text-[12.5px] text-[#C9CEDA]">
+                {l.clientName}
+                <span className="mt-0.5 block text-[11px] text-chrome">{SHARE_KIND_LABEL[l.kind]}</span>
+              </td>
               <td className="td text-[12px] text-chrome">{l.collectedOn ? fmtDate(l.collectedOn) : '—'}</td>
               <td className="td text-right font-mono tabular-nums text-[12.5px]">{money(l.taxable)}</td>
-              <td className="td text-right font-mono tabular-nums text-[12.5px] text-chrome">{money(l.cgst)}</td>
-              <td className="td text-right font-mono tabular-nums text-[12.5px] text-chrome">{money(l.sgst)}</td>
-              <td className="td text-right font-mono tabular-nums text-[12.5px] text-chrome">{money(l.igst)}</td>
               <td className="td text-right font-mono tabular-nums text-[13px] font-semibold text-white">{money(l.tax)}</td>
             </tr>
           ))}
@@ -63,20 +55,17 @@ function LineTable({
 }
 
 function Section({
-  icon, title, subtitle, count, tone, children, empty,
+  icon, title, count, tone, children, empty,
 }: {
-  icon: ReactNode; title: string; subtitle: string; count: number;
+  icon: ReactNode; title: string; count: number;
   tone: string; children: ReactNode; empty: string;
 }) {
   return (
     <section className="border-t border-line">
-      <header className="flex flex-wrap items-start justify-between gap-3 px-5 py-3.5">
-        <div className="flex items-start gap-2.5">
-          <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${tone}`}>{icon}</span>
-          <div>
-            <h3 className="text-[14px] font-bold text-white">{title}</h3>
-            <p className="mt-0.5 max-w-2xl text-[12px] leading-relaxed text-chrome">{subtitle}</p>
-          </div>
+      <header className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+        <div className="flex items-center gap-2.5">
+          <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${tone}`}>{icon}</span>
+          <h3 className="text-[14px] font-bold text-white">{title}</h3>
         </div>
         <span className="pill bg-ink-500 text-chrome">{count}</span>
       </header>
@@ -104,40 +93,23 @@ export default function GstMonthPack({
       <header className="border-b border-line px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="label-mono">Compliance pack · share with the GST team</p>
+            <p className="label-mono">This period</p>
             <h2 className="mt-1 font-display text-[26px] leading-none text-white">{pack.label}</h2>
-            <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-chrome">
-              Only GST on invoices whose payment has landed is remitted to the Government,
-              paid from {llp}. Raised-but-unpaid invoices stay in the hold list until the money arrives.
-            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button className="btn-ghost btn-sm" onClick={onCopy}><Copy size={14} /> Copy briefing</button>
             <button className="btn-ghost btn-sm" onClick={onCsv}><Download size={14} /> Pack CSV</button>
             <button className="btn-ghost btn-sm" onClick={onGstr1}><Download size={14} /> GSTR-1 CSV</button>
-            <button className="btn-primary btn-sm" onClick={onRecord}><Landmark size={14} /> Record LLP payment</button>
+            <button className="btn-primary btn-sm" onClick={onRecord}><Landmark size={14} /> Record payment</button>
           </div>
         </div>
 
-        <ol className="mt-4 grid gap-2 sm:grid-cols-3">
-          {[
-            ['1', 'Share', `${t.shareCount} paid invoice${t.shareCount === 1 ? '' : 's'} + any LUT copies`],
-            ['2', 'File', 'GST team files GSTR-1 / GSTR-3B for this period'],
-            ['3', 'Pay from LLP', `${money(t.netLlp)} net after ITC, from the LLP account`],
-          ].map(([n, title, body]) => (
-            <li key={n} className="rounded-xl border border-line bg-ink-800/50 px-3.5 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-300">Step {n} · {title}</p>
-              <p className="mt-1 text-[12.5px] leading-snug text-[#C9CEDA]">{body}</p>
-            </li>
-          ))}
-        </ol>
-
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            ['Share with team', String(t.shareCount), 'text-white'],
-            ['GST on receipts', money(t.output), 'text-white'],
-            ['ITC offset', money(t.itc), 'text-emerald-300'],
-            ['Pay from LLP', money(t.netLlp), 'text-amber-300'],
+            ['Paid invoices', String(t.shareCount), 'text-white'],
+            ['Tax collected', money(t.output), 'text-white'],
+            ['Claim back', money(t.itc), 'text-emerald-300'],
+            ['Pay from company', money(t.netLlp), 'text-amber-300'],
           ].map(([l, v, c]) => (
             <div key={l} className="rounded-xl border border-line bg-ink-800/40 px-3.5 py-2.5">
               <p className="label-mono">{l}</p>
@@ -145,21 +117,14 @@ export default function GstMonthPack({
             </div>
           ))}
         </div>
-        {(t.outstandingGst > 0.5 || t.partialGst > 0.5) && (
-          <p className="mt-3 text-[12px] text-chrome">
-            {t.outstandingGst > 0.5 && <>GST still waiting on unpaid invoices: {money(t.outstandingGst)}. </>}
-            {t.partialGst > 0.5 && <>Part-payments this period carry about {money(t.partialGst)} GST — flag with the team, not auto-added to the LLP challan.</>}
-          </p>
-        )}
       </header>
 
       <Section
         icon={<Send size={15} />}
         tone="bg-emerald-500/15 text-emerald-300"
-        title="Share these — payment received"
-        subtitle="Send these invoices (PDF + GSTIN) to the GST compliance team. This GST is due to the Government and is paid from the LLP account."
+        title="Paid — send these"
         count={pack.share.length}
-        empty="No fully paid invoices this period. If clients have not paid, there is nothing to remit.">
+        empty="No paid invoices this period.">
         <LineTable lines={pack.share} extra={(l) => l.paymentRefs.length ? (
           <span className="mt-0.5 block text-[10.5px] text-chrome-dark">{l.paymentRefs.join(' · ')}</span>
         ) : null} />
@@ -168,18 +133,16 @@ export default function GstMonthPack({
       <Section
         icon={<FileText size={15} />}
         tone="bg-blue/15 text-blue-300"
-        title="Zero-rated / LUT — share copies, no cash GST"
-        subtitle="Payment received, tax is nil. Still send the invoices so GSTR-1 shows the export / exempt supplies."
+        title="Exports — copies only, no GST to pay"
         count={pack.zeroRated.length}
-        empty="No zero-rated collections this period.">
+        empty="No export collections this period.">
         <LineTable lines={pack.zeroRated} />
       </Section>
 
       <Section
         icon={<Wallet size={15} />}
         tone="bg-amber-500/15 text-amber-300"
-        title="Part-paid — flag, do not treat as full GST"
-        subtitle="Money landed but the invoice is not closed. Tell the GST team. Do not remit the full invoice GST until the rest arrives."
+        title="Part-paid"
         count={pack.partial.length}
         empty="No part-payments this period.">
         <LineTable
@@ -187,7 +150,7 @@ export default function GstMonthPack({
           collectedLabel="Last receipt"
           extra={(l) => (
             <span className="mt-0.5 block text-[10.5px] text-amber-200/80">
-              Collected {money(l.collectedThisPeriod)} of {money(l.total)} · GST in this receipt ~ {money(l.taxThisPeriod)}
+              Received {money(l.collectedThisPeriod)} of {money(l.total)}
             </span>
           )} />
       </Section>
@@ -195,19 +158,18 @@ export default function GstMonthPack({
       <Section
         icon={<Ban size={15} />}
         tone="bg-ink-500 text-chrome"
-        title="Do not include in this Government payment"
-        subtitle="Payment has not been received. Keep the invoices. GST stays off the challan until the money is in the LLP account."
+        title="Not paid yet"
         count={hold}
-        empty="Nothing outstanding for this filing.">
+        empty="Nothing outstanding.">
         {pack.issuedUnpaid.length > 0 && (
           <>
-            <p className="px-5 pb-2 text-[11.5px] font-semibold uppercase tracking-[0.12em] text-chrome">Issued this period, still unpaid</p>
+            <p className="px-5 pb-2 text-[11.5px] font-semibold uppercase tracking-[0.12em] text-chrome">Issued this period</p>
             <LineTable lines={pack.issuedUnpaid} collectedLabel="Paid on" />
           </>
         )}
         {pack.earlierUnpaid.length > 0 && (
           <>
-            <p className="px-5 pb-2 pt-3 text-[11.5px] font-semibold uppercase tracking-[0.12em] text-chrome">Earlier invoices still unpaid</p>
+            <p className="px-5 pb-2 pt-3 text-[11.5px] font-semibold uppercase tracking-[0.12em] text-chrome">Older invoices</p>
             <LineTable lines={pack.earlierUnpaid} collectedLabel="Paid on" />
           </>
         )}
@@ -216,18 +178,17 @@ export default function GstMonthPack({
       <Section
         icon={<Building2 size={15} />}
         tone="bg-emerald-500/15 text-emerald-300"
-        title="ITC this period"
-        subtitle="Eligible input tax on bills dated this period. The GST team offsets this on GSTR-3B before cash leaves the LLP."
+        title="Tax on expenses — claim back"
         count={pack.itcExpenses.length}
-        empty="No eligible ITC this period.">
+        empty="No claimable tax on expenses this period.">
         <ItcTable expenses={pack.itcExpenses} />
       </Section>
 
       <footer className="border-t border-line bg-ink-800/40 px-5 py-3.5">
         <p className="text-[12.5px] leading-relaxed text-chrome">
           {t.netLlp > 0.5
-            ? <><CheckCircle2 size={13} className="mr-1 inline text-amber-300" /> Net {money(t.netLlp)} to pay from {llp} after ITC. Record the challan when the GST team confirms filing.</>
-            : <>Nil cash GST this period after ITC — still send the pack if there are invoices or LUT copies to report.</>}
+            ? <><CheckCircle2 size={13} className="mr-1 inline text-amber-300" /> Pay {money(t.netLlp)} from {llp} after claim-back. Record the challan when filing is done.</>
+            : <>Nothing to pay this period after claim-back.</>}
         </p>
       </footer>
     </div>
@@ -240,7 +201,7 @@ function ItcTable({ expenses }: { expenses: Expense[] }) {
       <table className="w-full min-w-[640px]">
         <thead><tr className="bg-ink-800/60">
           <th className="th">Date</th><th className="th">Vendor</th><th className="th">GSTIN</th>
-          <th className="th">Bill</th><th className="th text-right">Taxable</th><th className="th text-right">ITC</th>
+          <th className="th">Bill</th><th className="th text-right">Before tax</th><th className="th text-right">Claim back</th>
         </tr></thead>
         <tbody>
           {expenses.map((e) => {

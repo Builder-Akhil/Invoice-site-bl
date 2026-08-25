@@ -4,7 +4,9 @@ import { sb } from '@/lib/supabase/client';
 import { GST_TREATMENTS, type Client, type GstTreatment } from '@/lib/types';
 import { STATE_CODES, isValidGstin, isValidPan, stateCodeFromGstin, stateNameByCode } from '@/lib/gst';
 import { CURRENCIES } from '@/lib/format';
+import { useProfile } from '@/lib/hooks';
 import { Field, Input, Select, Textarea, Toggle, Modal, toast, Spinner } from './ui';
+import { SacPicker } from './SacPicker';
 
 const blank = (): Partial<Client> => ({
   company_name: '', contact_person: '', email: '', cc_emails: '', work_phone: '', mobile: '',
@@ -18,11 +20,16 @@ const blank = (): Partial<Client> => ({
 export default function ClientForm({ open, onClose, client, onSaved }: {
   open: boolean; onClose: () => void; client?: Client | null; onSaved: (c: Client) => void;
 }) {
+  const { profile } = useProfile();
   const [f, setF] = useState<Partial<Client>>(blank());
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<'basic' | 'address' | 'terms'>('basic');
 
-  useEffect(() => { if (open) { setF(client ? { ...client } : blank()); setTab('basic'); } }, [open, client]);
+  useEffect(() => {
+    if (!open) return;
+    setF(client ? { ...client } : { ...blank(), default_sac: profile?.default_sac ?? '' });
+    setTab('basic');
+  }, [open, client, profile?.default_sac]);
 
   const set = <K extends keyof Client>(k: K, v: Client[K]) => setF((s) => ({ ...s, [k]: v }));
 
@@ -192,8 +199,9 @@ export default function ClientForm({ open, onClose, client, onSaved }: {
             <Input type="number" min={0} max={28} value={f.default_gst_rate ?? 18}
               onChange={(e) => set('default_gst_rate', Number(e.target.value))} />
           </Field>
-          <Field label="Default SAC / HSN">
-            <Input className="input-mono" value={f.default_sac ?? ''} onChange={(e) => set('default_sac', e.target.value)} placeholder="998314" />
+          <Field label="Default SAC">
+            <SacPicker compact={false} value={f.default_sac ?? ''} codes={profile?.sac_codes}
+              onChange={(code) => set('default_sac', code)} />
           </Field>
           <Field label="Opening balance">
             <Input type="number" step="0.01" value={f.opening_balance ?? 0}

@@ -5,7 +5,7 @@ import type { DocType, Invoice, InvoiceLine, TaxMode } from './types';
 
 export const emptyLine = (position = 0, defaults?: Partial<InvoiceLine>): InvoiceLine => ({
   position, name: '', description: '', code_type: 'SAC', code: defaults?.code ?? '',
-  unit: 'qty', quantity: 1, rate: 0, discount_pct: 0, taxable_value: 0,
+  unit: 'hour', quantity: 1, rate: 0, discount_pct: 0, taxable_value: 0,
   gst_rate: defaults?.gst_rate ?? 18, cgst_amount: 0, sgst_amount: 0, igst_amount: 0,
   cess_rate: 0, cess_amount: 0, line_total: 0, ...defaults,
 });

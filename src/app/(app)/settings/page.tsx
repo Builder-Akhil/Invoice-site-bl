@@ -8,6 +8,8 @@ import type { CompanyProfile } from '@/lib/types';
 import { STATE_CODES, isValidGstin, stateNameByCode } from '@/lib/gst';
 import { BRAND_LOGO, displayLogo } from '@/lib/brand';
 import { Card, Field, Input, Loading, PageHeader, Select, Textarea, toast, Spinner } from '@/components/ui';
+import { SacCodesEditor, SacPicker } from '@/components/SacPicker';
+import { resolveSacCodes } from '@/lib/sac';
 
 const TABS = [
   { key: 'company', label: 'Company', icon: Building2 },
@@ -28,14 +30,23 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!profile) return;
-    setF({ ...profile, logo_url: profile.logo_url || BRAND_LOGO });
+    setF({
+      ...profile,
+      logo_url: profile.logo_url || BRAND_LOGO,
+      sac_codes: resolveSacCodes(profile.sac_codes),
+    });
   }, [profile]);
   const set = <K extends keyof CompanyProfile>(k: K, v: CompanyProfile[K]) => setF((s) => ({ ...s, [k]: v }));
 
   async function save() {
     if (f.gstin && !isValidGstin(f.gstin)) return toast('GSTIN does not look valid', 'error');
     setBusy(true);
-    const payload = { ...f, id: 1, updated_at: new Date().toISOString() };
+    const payload = {
+      ...f,
+      id: 1,
+      updated_at: new Date().toISOString(),
+      sac_codes: resolveSacCodes(f.sac_codes),
+    };
     const { error } = await sb().from('company_profile').upsert(payload);
     setBusy(false);
     if (error) return toast(error.message, 'error');
@@ -174,7 +185,20 @@ export default function SettingsPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Default due days"><Input type="number" min={0} value={f.default_due_days ?? 7} onChange={(e) => set('default_due_days', Number(e.target.value))} /></Field>
               <Field label="Default GST rate %"><Input type="number" value={f.default_gst_rate ?? 18} onChange={(e) => set('default_gst_rate', Number(e.target.value))} /></Field>
-              <Field label="Default SAC code" className="sm:col-span-2"><Input className="input-mono" value={f.default_sac ?? ''} onChange={(e) => set('default_sac', e.target.value)} /></Field>
+              <Field label="SAC list" className="sm:col-span-2"
+                hint="These tags appear on every invoice line. Add your own, or reset to Advisory / IT design / Training.">
+                <SacCodesEditor value={Array.isArray(f.sac_codes) && f.sac_codes.length ? f.sac_codes : resolveSacCodes(null)}
+                  onChange={(next) => {
+                    set('sac_codes', next);
+                    if (f.default_sac && !next.some((s) => s.code === f.default_sac)) {
+                      set('default_sac', next.find((s) => s.code)?.code ?? '');
+                    }
+                  }} />
+              </Field>
+              <Field label="Default SAC" className="sm:col-span-2" hint="Used on new invoice lines.">
+                <SacPicker compact={false} value={f.default_sac ?? ''} codes={f.sac_codes}
+                  onChange={(code) => set('default_sac', code)} />
+              </Field>
               <Field label="Default terms" className="sm:col-span-2"><Textarea value={f.default_terms ?? ''} onChange={(e) => set('default_terms', e.target.value)} /></Field>
               <Field label="Default notes" className="sm:col-span-2" hint="Bank details are added automatically below this.">
                 <Textarea value={f.default_notes ?? ''} onChange={(e) => set('default_notes', e.target.value)} placeholder="HSN Code: 999293" />

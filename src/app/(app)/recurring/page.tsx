@@ -5,8 +5,9 @@ import { sb } from '@/lib/supabase/client';
 import { useClients, useItems, useProfile } from '@/lib/hooks';
 import { computeTotals } from '@/lib/gst';
 import { CURRENCIES, fmtDate, money, moneyShort, todayISO } from '@/lib/format';
-import { UNITS, type InvoiceLine, type RecurringProfile } from '@/lib/types';
+import { UNITS, unitLabel, type InvoiceLine, type RecurringProfile } from '@/lib/types';
 import { emptyLine } from '@/lib/invoice-service';
+import { SacPicker } from '@/components/SacPicker';
 import {
   Card, EmptyState, Field, Input, Loading, Modal, PageHeader, Select, Textarea, Toggle, toast, useConfirm, Spinner,
 } from '@/components/ui';
@@ -214,28 +215,39 @@ export default function RecurringPage() {
               </button>
             </div>
             <datalist id="catalog-rec">{items.map((i) => <option key={i.id} value={i.name} />)}</datalist>
-            <div className="space-y-3">
+            <div className="space-y-2">
               {lines.map((l, i) => (
-                <div key={i} className="grid gap-2 rounded-lg border border-line bg-ink-800/50 p-3 sm:grid-cols-12">
-                  <Input list="catalog-rec" className="sm:col-span-5" placeholder="Item name" value={l.name}
-                    onChange={(e) => {
-                      const found = items.find((it) => it.name.toLowerCase() === e.target.value.toLowerCase());
-                      updateLine(i, found
-                        ? { name: found.name, description: found.description ?? '', code: found.code ?? '', unit: found.unit, rate: Number(found.rate), gst_rate: Number(found.gst_rate) }
-                        : { name: e.target.value });
-                    }} />
-                  <Input className="input-mono sm:col-span-2" placeholder="SAC" value={l.code ?? ''} onChange={(e) => updateLine(i, { code: e.target.value })} />
-                  <Input type="number" step="0.01" className="input-mono text-right sm:col-span-1" value={l.quantity} onChange={(e) => updateLine(i, { quantity: Number(e.target.value) })} />
-                  <Select className="sm:col-span-2" value={l.unit ?? 'month'} onChange={(e) => updateLine(i, { unit: e.target.value })}>
-                    {UNITS.map((u) => <option key={u} value={u}>per {u}</option>)}
-                  </Select>
-                  <Input type="number" step="0.01" className="input-mono text-right sm:col-span-2" placeholder="Rate" value={l.rate} onChange={(e) => updateLine(i, { rate: Number(e.target.value) })} />
-                  <Textarea rows={1} className="sm:col-span-10 text-[12.5px]" placeholder="Description" value={l.description ?? ''} onChange={(e) => updateLine(i, { description: e.target.value })} />
-                  <Select className="sm:col-span-1" value={String(l.gst_rate)} onChange={(e) => updateLine(i, { gst_rate: Number(e.target.value) })}>
-                    {[0, 5, 12, 18, 28].map((r) => <option key={r} value={r}>{r}%</option>)}
-                  </Select>
-                  <button className="btn-subtle btn-xs text-red-400 sm:col-span-1" disabled={lines.length === 1}
-                    onClick={() => setF({ ...f, line_items: lines.filter((_, idx) => idx !== i) })}><Trash2 size={14} /></button>
+                <div key={i} className="rounded-lg border border-line bg-ink-800/50 px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <Input list="catalog-rec" className="h-8 flex-1 border-transparent bg-transparent px-1 text-[13.5px] font-medium"
+                      placeholder="Item description" value={l.name}
+                      onChange={(e) => {
+                        const found = items.find((it) => it.name.toLowerCase() === e.target.value.toLowerCase());
+                        updateLine(i, found
+                          ? { name: found.name, description: found.description ?? '', code: found.code ?? '', unit: found.unit, rate: Number(found.rate), gst_rate: Number(found.gst_rate) }
+                          : { name: e.target.value, description: '' });
+                      }} />
+                    <button className="btn-subtle btn-xs text-red-400" disabled={lines.length === 1}
+                      onClick={() => setF({ ...f, line_items: lines.filter((_, idx) => idx !== i) })}><Trash2 size={14} /></button>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <SacPicker compact value={l.code ?? ''} codes={profile?.sac_codes}
+                      onChange={(code) => updateLine(i, { code })} />
+                    <span className="text-[11px] font-medium text-chrome">{unitLabel(l.unit)}</span>
+                    <Input type="number" step="0.01" className="input-compact input-mono w-[3.75rem] text-right"
+                      value={l.quantity} onChange={(e) => updateLine(i, { quantity: Number(e.target.value) })} />
+                    <Select className="input-compact w-[6.75rem]" value={l.unit ?? 'month'}
+                      onChange={(e) => updateLine(i, { unit: e.target.value })}>
+                      {UNITS.map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}
+                    </Select>
+                    <span className="text-[11px] font-medium text-chrome">Rate</span>
+                    <Input type="number" step="0.01" className="input-compact input-mono w-[5.5rem] text-right"
+                      placeholder="Rate" value={l.rate} onChange={(e) => updateLine(i, { rate: Number(e.target.value) })} />
+                    <Select className="input-compact w-[4.4rem]" value={String(l.gst_rate)}
+                      onChange={(e) => updateLine(i, { gst_rate: Number(e.target.value) })}>
+                      {[0, 5, 12, 18, 28].map((r) => <option key={r} value={r}>{r}%</option>)}
+                    </Select>
+                  </div>
                 </div>
               ))}
             </div>

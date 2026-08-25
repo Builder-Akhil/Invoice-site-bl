@@ -1,3 +1,6 @@
+import type { SacCode } from './sac';
+export type { SacCode } from './sac';
+
 export type DocType = 'invoice' | 'quote';
 
 export type TaxMode = 'intra' | 'inter' | 'export_lut' | 'export_paid' | 'exempt';
@@ -44,6 +47,8 @@ export interface CompanyProfile {
   fy_start_month: number;
   /** INR in the bank as typed in Settings. `null` = not set — never invent runway from this. */
   cash_on_hand: number | null;
+  /** Custom SAC list from Settings. Empty / missing → built-in Advisory / IT design / Training. */
+  sac_codes: SacCode[] | null;
 }
 
 export interface Client {
@@ -239,7 +244,22 @@ export const EXPENSE_CATEGORIES = [
   'Equipment & Hardware', 'Bank Charges', 'Statutory & Compliance', 'Training & Education', 'Other',
 ];
 
-export const UNITS = ['qty', 'hour', 'day', 'month', 'project', 'user', 'sprint', 'license'];
+export const UNITS = ['hour', 'day', 'month', 'qty', 'project', 'user', 'sprint', 'license'] as const;
+
+export const UNIT_LABEL: Record<string, string> = {
+  hour: 'Hours',
+  day: 'Days',
+  month: 'Months',
+  qty: 'Pieces',
+  project: 'Projects',
+  user: 'Users',
+  sprint: 'Sprints',
+  license: 'Licenses',
+};
+
+export function unitLabel(unit?: string | null) {
+  return UNIT_LABEL[unit || ''] ?? 'Qty';
+}
 
 export interface ChatAttachment {
   media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';

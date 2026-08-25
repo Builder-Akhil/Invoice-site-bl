@@ -9,8 +9,10 @@ import {
   resolveTaxMode, stateNameByCode, supplierState,
 } from '@/lib/gst';
 import { CURRENCIES, addDays, money, num, todayISO } from '@/lib/format';
-import { UNITS, type Client, type DocType, type Invoice, type InvoiceLine, type TaxMode } from '@/lib/types';
+import { UNITS, unitLabel, type Client, type DocType, type Invoice, type InvoiceLine, type TaxMode } from '@/lib/types';
 import { Card, Field, Input, Loading, Modal, PageHeader, Select, Textarea, Toggle, toast, Spinner } from './ui';
+import { SacPicker } from './SacPicker';
+import { resolveSacCodes } from '@/lib/sac';
 import ClientForm from './ClientForm';
 import InvoicePaper from './InvoicePaper';
 
@@ -39,7 +41,7 @@ export default function InvoiceEditor({ docType, invoiceId, presetClientId }: {
     doc_type: docType, invoice_date: todayISO(), terms_label: 'Due on Receipt',
     currency: 'INR', exchange_rate: 1, tax_mode: 'inter', status: 'draft',
   });
-  const [lines, setLines] = useState<InvoiceLine[]>([emptyLine(0)]);
+  const [lines, setLines] = useState<InvoiceLine[]>([emptyLine(0, { unit: 'hour' })]);
 
   const set = <K extends keyof Invoice>(k: K, v: Invoice[K]) => setH((s) => ({ ...s, [k]: v }));
   const client = useMemo(() => clients.find((c) => c.id === h.client_id) ?? null, [clients, h.client_id]);
@@ -52,7 +54,7 @@ export default function InvoiceEditor({ docType, invoiceId, presetClientId }: {
         try {
           const inv = await loadInvoice(invoiceId);
           setH(inv);
-          setLines(inv.invoice_items?.length ? inv.invoice_items : [emptyLine(0)]);
+          setLines(inv.invoice_items?.length ? inv.invoice_items : [emptyLine(0, { unit: 'hour' })]);
           setRoundOff(Math.abs(Number(inv.round_off)) > 0 || true);
           setModeOverride(true);
         } catch (e) { toast(e instanceof Error ? e.message : 'Could not load', 'error'); }
@@ -76,6 +78,12 @@ export default function InvoiceEditor({ docType, invoiceId, presetClientId }: {
         } catch { /* ignore */ }
       } else if (presetClientId) {
         set('client_id', presetClientId);
+      } else {
+        setLines([emptyLine(0, {
+          unit: 'hour',
+          code: profile?.default_sac ?? resolveSacCodes(profile?.sac_codes)[0]?.code ?? '',
+          gst_rate: Number(profile?.default_gst_rate ?? 18),
+        })]);
       }
       setReady(true);
     })();
@@ -126,7 +134,7 @@ export default function InvoiceEditor({ docType, invoiceId, presetClientId }: {
 
   function pickCatalog(i: number, name: string) {
     const found = items.find((it) => it.name.toLowerCase() === name.toLowerCase());
-    if (!found) return updateLine(i, { name });
+    if (!found) return updateLine(i, { name, description: '', item_id: null });
     updateLine(i, {
       name: found.name, description: found.description ?? '', code: found.code ?? '',
       code_type: found.code_type, unit: found.unit, rate: Number(found.rate) || 0,
@@ -298,87 +306,83 @@ export default function InvoiceEditor({ docType, invoiceId, presetClientId }: {
             </Card>
 
             {/* ---------------- line items ---------------- */}
-            <Card title="Line items" subtitle="Every line carries its own SAC/HSN code and GST rate."
+            <Card title="Line items" subtitle="One line per service. SAC and units sit underneath."
               bodyClass="p-0"
-              action={<button className="btn-ghost btn-sm" onClick={() => setLines((ls) => [...ls, emptyLine(ls.length, { code: client?.default_sac ?? profile?.default_sac ?? '', gst_rate: Number(client?.default_gst_rate ?? profile?.default_gst_rate ?? 18) })])}>
+              action={<button className="btn-ghost btn-sm" onClick={() => setLines((ls) => [...ls, emptyLine(ls.length, {
+                code: client?.default_sac ?? profile?.default_sac ?? resolveSacCodes(profile?.sac_codes)[0]?.code ?? '',
+                gst_rate: Number(client?.default_gst_rate ?? profile?.default_gst_rate ?? 18),
+                unit: ls[ls.length - 1]?.unit ?? 'hour',
+              })])}>
                 <Plus size={14} /> Add line
               </button>}>
               <datalist id="catalog">
                 {items.map((i) => <option key={i.id} value={i.name} />)}
               </datalist>
 
-              <div className="scroll-x">
-                <table className="w-full min-w-[900px]">
-                  <thead><tr className="bg-ink-800/60">
-                    <th className="th w-6"></th>
-                    <th className="th">Item &amp; description</th>
-                    <th className="th w-[110px]">SAC / HSN</th>
-                    <th className="th w-[130px]">Qty / unit</th>
-                    <th className="th w-[110px] text-right">Rate</th>
-                    <th className="th w-[86px] text-right">Disc %</th>
-                    <th className="th w-[92px] text-right">GST</th>
-                    <th className="th w-[110px] text-right">Amount</th>
-                    <th className="th w-8"></th>
-                  </tr></thead>
-                  <tbody>
-                    {lines.map((l, i) => {
-                      const c = computeTotals([l], (h.tax_mode ?? 'inter') as TaxMode, { roundOff: false });
-                      return (
-                        <tr key={i} className="align-top">
-                          <td className="td text-center text-chrome-dark"><GripVertical size={13} className="mx-auto" /></td>
-                          <td className="td">
-                            <Input list="catalog" placeholder="Service name" value={l.name}
-                              onChange={(e) => pickCatalog(i, e.target.value)} />
-                            <Textarea rows={2} className="mt-1.5 text-[12.5px]" placeholder="Description shown under the item"
-                              value={l.description ?? ''} onChange={(e) => updateLine(i, { description: e.target.value })} />
-                          </td>
-                          <td className="td">
-                            <Input className="input-mono" placeholder="998314" value={l.code ?? ''}
-                              onChange={(e) => updateLine(i, { code: e.target.value })} />
-                            <Select className="mt-1.5 h-7 text-[11.5px]" value={l.code_type ?? 'SAC'}
-                              onChange={(e) => updateLine(i, { code_type: e.target.value })}>
-                              <option value="SAC">SAC</option><option value="HSN">HSN</option>
-                            </Select>
-                          </td>
-                          <td className="td">
-                            <Input type="number" step="0.01" className="input-mono text-right" value={l.quantity}
-                              onChange={(e) => updateLine(i, { quantity: Number(e.target.value) })} />
-                            <Select className="mt-1.5 h-7 text-[11.5px]" value={l.unit ?? 'qty'}
-                              onChange={(e) => updateLine(i, { unit: e.target.value })}>
-                              {UNITS.map((u) => <option key={u} value={u}>per {u}</option>)}
-                            </Select>
-                          </td>
-                          <td className="td">
-                            <Input type="number" step="0.01" className="input-mono text-right" value={l.rate}
-                              onChange={(e) => updateLine(i, { rate: Number(e.target.value) })} />
-                          </td>
-                          <td className="td">
-                            <Input type="number" step="0.01" className="input-mono text-right" value={l.discount_pct}
-                              onChange={(e) => updateLine(i, { discount_pct: Number(e.target.value) })} />
-                          </td>
-                          <td className="td">
-                            <Select className="text-right" value={String(l.gst_rate)}
-                              disabled={h.tax_mode === 'export_lut' || h.tax_mode === 'exempt'}
-                              onChange={(e) => updateLine(i, { gst_rate: Number(e.target.value) })}>
-                              {GST_RATES.map((r) => <option key={r} value={r}>{r}%</option>)}
-                            </Select>
-                            {showCgst && Number(l.gst_rate) > 0 && (
-                              <p className="mt-1 text-right text-[10px] text-chrome-dark">{Number(l.gst_rate) / 2}+{Number(l.gst_rate) / 2}</p>
-                            )}
-                          </td>
-                          <td className="td text-right">
-                            <p className="font-mono text-[13px] tabular-nums text-white">{num(c.subtotal)}</p>
-                            {c.tax_total > 0 && <p className="mt-0.5 font-mono text-[11px] text-chrome-dark">+{num(c.tax_total)} tax</p>}
-                          </td>
-                          <td className="td">
-                            <button className="btn-subtle btn-xs text-red-400 hover:text-red-300" disabled={lines.length === 1}
-                              onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))}><Trash2 size={14} /></button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="divide-y divide-line">
+                {lines.map((l, i) => {
+                  const c = computeTotals([l], (h.tax_mode ?? 'inter') as TaxMode, { roundOff: false });
+                  return (
+                    <div key={i} className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <GripVertical size={13} className="shrink-0 text-chrome-dark" />
+                        <Input
+                          list="catalog"
+                          className="h-8 flex-1 border-transparent bg-transparent px-1.5 text-[14px] font-medium shadow-none hover:bg-ink-800/70 focus:border-line focus:bg-ink-800"
+                          placeholder="Item description"
+                          value={l.name}
+                          onChange={(e) => pickCatalog(i, e.target.value)}
+                        />
+                        <div className="shrink-0 text-right">
+                          <p className="font-mono text-[13.5px] tabular-nums text-white">{num(c.subtotal)}</p>
+                          {c.tax_total > 0 && (
+                            <p className="font-mono text-[10.5px] tabular-nums text-chrome-dark">+{num(c.tax_total)} tax</p>
+                          )}
+                        </div>
+                        <button className="btn-subtle btn-xs shrink-0 text-red-400 hover:text-red-300" disabled={lines.length === 1}
+                          onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))}><Trash2 size={14} /></button>
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-2 pl-6">
+                        <Select className="input-compact w-[4.6rem]" value={l.code_type ?? 'SAC'}
+                          onChange={(e) => updateLine(i, { code_type: e.target.value })}>
+                          <option value="SAC">SAC</option><option value="HSN">HSN</option>
+                        </Select>
+                        {(l.code_type ?? 'SAC') === 'HSN' ? (
+                          <Input className="input-compact input-mono w-[6.5rem]" placeholder="HSN" value={l.code ?? ''}
+                            onChange={(e) => updateLine(i, { code: e.target.value.replace(/\s/g, '') })} />
+                        ) : (
+                          <SacPicker compact value={l.code ?? ''} codes={profile?.sac_codes}
+                            onChange={(code) => updateLine(i, { code, code_type: 'SAC' })} />
+                        )}
+
+                        <span className="ml-1 text-[11px] font-medium text-chrome">{unitLabel(l.unit)}</span>
+                        <Input type="number" step="0.01" min={0}
+                          className="input-compact input-mono w-[3.75rem] text-right" value={l.quantity}
+                          onChange={(e) => updateLine(i, { quantity: Number(e.target.value) })} />
+                        <Select className="input-compact w-[6.75rem]" value={l.unit ?? 'hour'}
+                          onChange={(e) => updateLine(i, { unit: e.target.value })}>
+                          {UNITS.map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}
+                        </Select>
+
+                        <span className="text-[11px] font-medium text-chrome">Rate</span>
+                        <Input type="number" step="0.01" className="input-compact input-mono w-[5.5rem] text-right" value={l.rate}
+                          onChange={(e) => updateLine(i, { rate: Number(e.target.value) })} />
+
+                        <span className="text-[11px] font-medium text-chrome">Disc %</span>
+                        <Input type="number" step="0.01" className="input-compact input-mono w-[3.5rem] text-right" value={l.discount_pct}
+                          onChange={(e) => updateLine(i, { discount_pct: Number(e.target.value) })} />
+
+                        <span className="text-[11px] font-medium text-chrome">GST</span>
+                        <Select className="input-compact w-[4.4rem]" value={String(l.gst_rate)}
+                          disabled={h.tax_mode === 'export_lut' || h.tax_mode === 'exempt'}
+                          onChange={(e) => updateLine(i, { gst_rate: Number(e.target.value) })}>
+                          {GST_RATES.map((r) => <option key={r} value={r}>{r}%</option>)}
+                        </Select>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </Card>
 

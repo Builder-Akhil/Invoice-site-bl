@@ -44,7 +44,9 @@
   }
   textarea.input { @apply h-auto py-2 leading-relaxed; }
   select.input { @apply pr-8 appearance-none bg-[url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%2712%27%20height%3D%2712%27%20fill%3D%27none%27%20stroke%3D%27%237A8296%27%20stroke-width%3D%271.6%27%3E%3Cpath%20d%3D%27M2%204.5L6%208.5L10%204.5%27%2F%3E%3C%2Fsvg%3E")] bg-[length:12px] bg-[right_10px_center] bg-no-repeat; }
-  .input-mono { @apply font-mono tabular-nums; }
+  .input-compact {
+    @apply h-7 w-auto min-w-0 px-2 text-[12.5px] rounded-md;
+  }
   .field-label { @apply block text-[11.5px] font-semibold text-chrome mb-1.5; }
 
   .th { @apply px-3 py-2.5 text-left label-mono font-medium whitespace-nowrap; }

@@ -1,5 +1,6 @@
 'use client';
 import type { Client, CompanyProfile, Invoice, InvoiceLine } from '@/lib/types';
+import { unitLabel } from '@/lib/types';
 import { amountInWords, fmtDate, money, num, qtyFmt } from '@/lib/format';
 import { displayLogo } from '@/lib/brand';
 
@@ -125,8 +126,8 @@ export default function InvoicePaper({ invoice, lines, client, profile, classNam
         <thead>
           <tr style={{ background: HEAD, color: '#fff' }}>
             <th style={{ padding: '9px 8px', fontSize: 10, fontWeight: 600, textAlign: 'left', width: 26 }}>#</th>
-            <th style={{ padding: '9px 8px', fontSize: 10, fontWeight: 600, textAlign: 'left' }}>Item &amp; Description</th>
-            <th style={{ padding: '9px 8px', fontSize: 10, fontWeight: 600, textAlign: 'right', width: 62 }}>Qty</th>
+            <th style={{ padding: '9px 8px', fontSize: 10, fontWeight: 600, textAlign: 'left' }}>Item description</th>
+            <th style={{ padding: '9px 8px', fontSize: 10, fontWeight: 600, textAlign: 'right', width: 72 }}>Qty</th>
             <th style={{ padding: '9px 8px', fontSize: 10, fontWeight: 600, textAlign: 'right', width: 80 }}>Rate</th>
             {showCgst && <><th style={{ padding: '9px 8px', fontSize: 10, fontWeight: 600, textAlign: 'right', width: 74 }}>CGST</th>
               <th style={{ padding: '9px 8px', fontSize: 10, fontWeight: 600, textAlign: 'right', width: 74 }}>SGST</th></>}
@@ -145,7 +146,7 @@ export default function InvoicePaper({ invoice, lines, client, profile, classNam
               </td>
               <td style={{ padding: '10px 8px', fontSize: 10.5, textAlign: 'right', color: '#1A1D24', fontVariantNumeric: 'tabular-nums' }}>
                 {qtyFmt(l.quantity)}
-                {l.unit && l.unit !== 'qty' && <span style={{ display: 'block', fontSize: 9, color: '#7A8296' }}>{l.unit}</span>}
+                {l.unit && <span style={{ display: 'block', fontSize: 9, color: '#7A8296' }}>{unitLabel(l.unit)}</span>}
               </td>
               <td style={{ padding: '10px 8px', fontSize: 10.5, textAlign: 'right', color: '#1A1D24', fontVariantNumeric: 'tabular-nums' }}>
                 {num(l.rate)}

@@ -2,12 +2,13 @@
 import { Suspense, useMemo, useState } from 'react';
 import { Plus, Package, Pencil, Trash2, Search } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
-import { useItems } from '@/lib/hooks';
+import { useItems, useProfile } from '@/lib/hooks';
 import { useListFilters } from '@/lib/list-filters';
-import { UNITS, type CatalogItem } from '@/lib/types';
+import { UNITS, unitLabel, type CatalogItem } from '@/lib/types';
 import { GST_RATES } from '@/lib/gst';
 import { money } from '@/lib/format';
 import { Card, EmptyState, Field, Input, Loading, Modal, PageHeader, Select, Textarea, Toggle, toast, useConfirm } from '@/components/ui';
+import { SacPicker } from '@/components/SacPicker';
 
 const blank = (): Partial<CatalogItem> => ({
   name: '', description: '', kind: 'service', code_type: 'SAC', code: '998314',
@@ -26,6 +27,7 @@ export default function ItemsPage() {
 
 function ItemsInner() {
   const { items, loading, reload } = useItems();
+  const { profile } = useProfile();
   const { confirm, confirmNode } = useConfirm();
   const { values: filt, set: setFilter } = useListFilters('items', ITEM_FILTERS);
   const q = filt.q;
@@ -91,7 +93,7 @@ function ItemsInner() {
                       <td className="td font-mono text-[12.5px] text-[#C9CEDA]">
                         <span className="text-chrome-dark">{i.code_type}</span> {i.code || '—'}
                       </td>
-                      <td className="td text-[12.5px] text-chrome">per {i.unit}</td>
+                      <td className="td text-[12.5px] text-chrome">{unitLabel(i.unit)}</td>
                       <td className="td text-right font-mono tabular-nums text-[13px] text-[#C9CEDA]">
                         {i.rate ? money(i.rate, i.currency) : '—'}
                       </td>
@@ -127,12 +129,17 @@ function ItemsInner() {
               <option value="service">Service (SAC)</option><option value="goods">Goods (HSN)</option>
             </Select>
           </Field>
-          <Field label={`${f.code_type} code`} hint="Mandatory on GST invoices. 998314 = IT design & development, 999293 = training / coaching.">
-            <Input className="input-mono" value={f.code ?? ''} onChange={(e) => setF({ ...f, code: e.target.value })} placeholder="998314" />
+          <Field label={`${f.code_type} code`} hint="GST needs a code on every line. Pick a tagged SAC, or switch to goods for HSN.">
+            {f.code_type === 'HSN' ? (
+              <Input className="input-mono" value={f.code ?? ''} onChange={(e) => setF({ ...f, code: e.target.value })} placeholder="HSN" />
+            ) : (
+              <SacPicker compact={false} value={f.code ?? ''} codes={profile?.sac_codes}
+                onChange={(code) => setF({ ...f, code })} />
+            )}
           </Field>
           <Field label="Unit">
             <Select value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })}>
-              {UNITS.map((u) => <option key={u} value={u}>per {u}</option>)}
+              {UNITS.map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}
             </Select>
           </Field>
           <Field label="Default rate">

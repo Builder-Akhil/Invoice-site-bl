@@ -4,6 +4,7 @@ import React from 'react';
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { join } from 'node:path';
 import type { Client, CompanyProfile, Invoice, InvoiceLine } from '../types';
+import { unitLabel } from '../types';
 import { amountInWords, fmtDate, money, num, qtyFmt } from '../format';
 import { BRAND_LOGO } from '../brand';
 import { PDF_SANS, registerPdfFonts } from './fonts';
@@ -134,7 +135,7 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
         <View style={{ marginTop: 16 }}>
           <View style={[s.row, { backgroundColor: HEAD }]}>
             <Text style={[s.th, { width: '5%' }]}>#</Text>
-            <Text style={[s.th, { width: wItem }]}>Item &amp; Description</Text>
+            <Text style={[s.th, { width: wItem }]}>Item description</Text>
             <Text style={[s.th, { width: '10%', textAlign: 'right' }]}>Qty</Text>
             <Text style={[s.th, { width: '13%', textAlign: 'right' }]}>Rate</Text>
             {showCgst ? <><Text style={[s.th, { width: wTax, textAlign: 'right' }]}>CGST</Text>
@@ -153,7 +154,7 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
               </View>
               <View style={[s.td, { width: '10%' }]}>
                 <Text style={{ fontSize: 8, textAlign: 'right' }}>{qtyFmt(l.quantity)}</Text>
-                {l.unit && l.unit !== 'qty' ? <Text style={{ fontSize: 6.8, color: FAINT, textAlign: 'right' }}>{l.unit}</Text> : null}
+                {l.unit ? <Text style={{ fontSize: 6.8, color: FAINT, textAlign: 'right' }}>{unitLabel(l.unit)}</Text> : null}
               </View>
               <View style={[s.td, { width: '13%' }]}>
                 <Text style={{ fontSize: 8, textAlign: 'right' }}>{num(l.rate)}</Text>

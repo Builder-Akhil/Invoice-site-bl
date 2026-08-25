@@ -51,15 +51,17 @@ function ClientsInner() {
       });
   }, [clients]);
 
-  const filtered = useMemo(() => {
+  const searched = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return clients.filter((c) => {
-      if (tab !== 'all' && c.status !== tab) return false;
-      if (!s) return true;
-      return [c.company_name, c.contact_person, c.email, c.gstin, c.bill_city]
-        .some((v) => (v ?? '').toLowerCase().includes(s));
-    });
-  }, [clients, q, tab]);
+    if (!s) return clients;
+    return clients.filter((c) =>
+      [c.company_name, c.contact_person, c.email, c.gstin, c.bill_city]
+        .some((v) => (v ?? '').toLowerCase().includes(s)));
+  }, [clients, q]);
+
+  const filtered = useMemo(() => {
+    return searched.filter((c) => tab === 'all' || c.status === tab);
+  }, [searched, tab]);
 
   const exportCsv = () => downloadCSV('buildablelabs-clients.csv', [
     ['Company', 'Contact', 'Email', 'Phone', 'GST treatment', 'GSTIN', 'Place of supply', 'Currency', 'Terms (days)', 'Billed (INR)', 'Outstanding (INR)'],
@@ -83,9 +85,9 @@ function ClientsInner() {
           <Input className="pl-8" placeholder="Search name, email, GSTIN, city…" value={q} onChange={(e) => set('q', e.target.value)} />
         </div>
         <Tabs active={tab} onChange={(k) => set('tab', k)} tabs={[
-          { key: 'active', label: 'Active', count: clients.filter((c) => c.status === 'active').length },
-          { key: 'inactive', label: 'Inactive', count: clients.filter((c) => c.status !== 'active').length },
-          { key: 'all', label: 'All', count: clients.length },
+          { key: 'active', label: 'Active', count: searched.filter((c) => c.status === 'active').length },
+          { key: 'inactive', label: 'Inactive', count: searched.filter((c) => c.status !== 'active').length },
+          { key: 'all', label: 'All', count: searched.length },
         ]} />
       </div>
 
