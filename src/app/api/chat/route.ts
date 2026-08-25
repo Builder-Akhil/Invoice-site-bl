@@ -75,19 +75,25 @@ export async function POST(req: NextRequest) {
     const system = `You are the billing assistant inside ${company?.legal_name ?? 'BuildableLabs LLP'}'s invoicing portal.
 Today is ${new Date().toISOString().slice(0, 10)}. Supplier state: ${company?.state ?? 'Telangana'} (${company?.state_code ?? '36'}). Default currency INR.
 
-You can: create clients, draft invoices/quotes, log expenses, record GST payments or ITC credits, create retainers, run due retainers, and mark invoices paid/unpaid. Be decisive — if the request is complete, use a tool rather than only asking questions.
+You can: create clients, draft invoices/quotes, log expenses, record GST payments or ITC credits, create retainers, run due retainers, and mark invoices paid/unpaid.
+
+CRITICAL — tools:
+- If the user asks to create, log, add, record, mark, or generate anything, you MUST call the matching tool. Never reply "Done." or claim you created a record unless a tool returned success.
+- You CAN see attached images (receipts, screenshots, challans). Never say an image did not come through when an image block is in the message. Read the figures and act.
+- Be decisive: if amount + vendor (or client + service) are visible in text or image, call the tool. Only ask a question when a required figure is truly missing.
 
 Rules:
 - Match the client by name against the CLIENTS list (case-insensitive, partial matches are fine). Use its exact id.
 - Only call create_client when the company genuinely is not in the list.
 - Indian shorthand: "2.5L"/"2.5 lakh" = 250000, "1cr" = 10000000, "50k" = 50000.
-- Rates are ALWAYS exclusive of GST. If the user gives an inclusive figure, back it out and say so.
+- Invoice rates are ALWAYS exclusive of GST. If the user gives an inclusive figure, back it out and say so.
 - Default gst_rate 18 unless told otherwise. Pull SAC codes and rates from the SERVICES catalog when the item matches.
 - Never invent GSTINs, invoice numbers or tax splits — the system computes those.
 - Expenses: default tax_split igst (most SaaS). Same-state India vendors → cgst_sgst. itc_eligible true unless told otherwise.
+- Travel / Airbnb / hotels / flights / foreign platforms with no Indian GSTIN: category Travel, tax_split none, itc_eligible false.
+- If the founder paid personally and the LLP transferred the same amount to their savings (or reimbursed them): payment_mode reimbursement. That is an LLP business expense, not a loan or drawing.
 - GST credits = itc_utilised on create_gst_payment. Cash to the department = igst_paid / cgst_paid / sgst_paid.
-- After creating something, reply in one or two short sentences: what was created, the amount, and where to review it. No preamble, no markdown headings.
-- The user may attach screenshots of invoices, quotes, WhatsApp chats, rate cards or GST challans. Read them and act.
+- After a successful tool, reply in one or two short sentences: what was created, the amount, and where to review it. No preamble, no markdown headings.
 
 CLIENTS:
 ${JSON.stringify(clients ?? [])}
@@ -115,21 +121,41 @@ ${JSON.stringify(retainers ?? [])}`;
         { role: 'user' as const, content: message, attachments: images }]);
 
     const lastUserIdx = rows.reduce((acc, r, i) => (r.role === 'user' ? i : acc), -1);
+    if (images.length && lastUserIdx >= 0) {
+      (rows[lastUserIdx] as { attachments: typeof images }).attachments = images;
+    }
+    const imageTurnIdx = rows
+      .map((r, i) => ({ i, n: Array.isArray(r.attachments) ? (r.attachments as unknown[]).length : 0 }))
+      .filter((x) => x.n > 0)
+      .slice(-3)
+      .map((x) => x.i);
+    const keepImages = new Set(imageTurnIdx);
+
+    const rawImage = (img: { media_type?: string; data?: string }) =>
+      String(img.data ?? '').replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '');
+
     const mapped: Anthropic.MessageParam[] = rows.map((r, i) => {
-      const atts = Array.isArray(r.attachments) ? r.attachments as typeof images : [];
-      if (r.role === 'user' && i === lastUserIdx && atts.length) {
+      const atts = (Array.isArray(r.attachments) ? r.attachments as typeof images : [])
+        .filter((img) => rawImage(img).length > 20);
+      const text = (r.content as string) || (atts.length ? 'Please look at the attached image and help me with billing.' : '.');
+      if (r.role === 'user' && keepImages.has(i) && atts.length) {
         return {
           role: 'user' as const,
           content: [
             ...atts.map((img) => ({
               type: 'image' as const,
-              source: { type: 'base64' as const, media_type: img.media_type, data: img.data },
+              source: {
+                type: 'base64' as const,
+                media_type: (allowedTypes.includes(img.media_type as typeof allowedTypes[number])
+                  ? img.media_type : 'image/jpeg') as typeof allowedTypes[number],
+                data: rawImage(img),
+              },
             })),
-            { type: 'text' as const, text: (r.content as string) || 'Please look at the attached image and help me with billing.' },
+            { type: 'text' as const, text },
           ],
         };
       }
-      return { role: r.role as 'user' | 'assistant', content: (r.content as string) || (atts.length ? '(image attached)' : '.') };
+      return { role: r.role as 'user' | 'assistant', content: text };
     });
 
     const messages: Anthropic.MessageParam[] = [];
@@ -145,22 +171,42 @@ ${JSON.stringify(retainers ?? [])}`;
     }
     if (messages[0]?.role === 'assistant') messages.shift();
 
-    let created: Awaited<ReturnType<typeof executeAssistantTool>>['draft'] = null;
-    let reply = '';
+    const wantsRecord = images.length > 0
+      || /\b(invoice|quote|expense|client|gst|itc|retainer|log|create|add|record|mark|paid|unpaid|credit|challan)\b/i.test(message);
 
-    for (let turn = 0; turn < 5; turn++) {
+    let draft: Awaited<ReturnType<typeof executeAssistantTool>>['draft'] = null;
+    const created: NonNullable<Awaited<ReturnType<typeof executeAssistantTool>>['created']>[] = [];
+    let reply = '';
+    let usedTool = false;
+    let nudged = false;
+
+    for (let turn = 0; turn < 6; turn++) {
       const res = await anthropic.messages.create({
         model: process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5',
         max_tokens: 1600,
         system,
         tools,
         messages,
+        ...(nudged && !usedTool ? { tool_choice: { type: 'any' as const } } : {}),
       });
 
       reply = res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('\n').trim();
 
-      if (res.stop_reason !== 'tool_use') break;
+      if (res.stop_reason !== 'tool_use') {
+        if (!usedTool && wantsRecord && !nudged) {
+          nudged = true;
+          const blocks = res.content.length ? res.content : [{ type: 'text' as const, text: reply || '…' }];
+          messages.push({ role: 'assistant', content: blocks });
+          messages.push({
+            role: 'user',
+            content: 'You did not call a tool, so nothing was saved. If a receipt or screenshot is in this thread, you can see it — extract the figures and call the matching tool now (create_expense, create_draft_invoice, create_client, create_gst_payment, or create_retainer). Do not claim the image is missing. Do not reply Done without a tool result.',
+          });
+          continue;
+        }
+        break;
+      }
 
+      usedTool = true;
       const toolUses = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
       messages.push({ role: 'assistant', content: res.content });
 
@@ -168,7 +214,8 @@ ${JSON.stringify(retainers ?? [])}`;
       for (const tu of toolUses) {
         try {
           const out = await executeAssistantTool(supabase, tu.name, tu.input, company, user.email);
-          if (out.draft) created = out.draft;
+          if (out.draft) draft = out.draft;
+          if (out.created) created.push(out.created);
           results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out.result) });
         } catch (e) {
           results.push({
@@ -180,16 +227,25 @@ ${JSON.stringify(retainers ?? [])}`;
       messages.push({ role: 'user', content: results });
     }
 
-    const finalReply = reply || 'Done.';
+    const finalReply = reply
+      || (created.length ? `Created — open ${created.map((c) => c.title).join(', ')} to review.` : '')
+      || (wantsRecord
+        ? 'I could not save that from what I had. Attach the receipt again, or send the amount and date.'
+        : 'Done.');
     await supabase.from('conversation_messages').insert({
       conversation_id: conversationId,
       role: 'assistant',
       content: finalReply,
-      draft: created,
+      draft: created.length ? created : draft,
     });
     await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
 
-    return NextResponse.json({ reply: finalReply, draft: created, conversation_id: conversationId });
+    return NextResponse.json({
+      reply: finalReply,
+      draft: created.find((c) => c.kind === 'invoice') ?? draft,
+      created,
+      conversation_id: conversationId,
+    });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Assistant failed' }, { status: 500 });
   }

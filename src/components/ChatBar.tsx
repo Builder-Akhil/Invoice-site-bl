@@ -46,8 +46,8 @@ export default function ChatBar() {
         images,
       });
       setConversationId(j.conversation_id);
-      setMsgs([...next, { role: 'assistant', content: j.reply, draft: j.draft }]);
-      if (j.draft) router.refresh();
+      setMsgs([...next, { role: 'assistant', content: j.reply, draft: j.draft, created: j.created }]);
+      if (j.draft || j.created?.length) router.refresh();
     } catch (e) {
       setMsgs([...next, { role: 'assistant', content: e instanceof Error ? e.message : 'Something went wrong.' }]);
     } finally { setBusy(false); }

@@ -1,16 +1,43 @@
 'use client';
 import { useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowUp, FileText, ImagePlus, Loader2, Mic, Square, X } from 'lucide-react';
+import { ArrowUp, FileText, ImagePlus, Landmark, Loader2, Mic, Receipt, Square, UserPlus, X } from 'lucide-react';
 import { money } from '@/lib/format';
 import { compressImage, isAllowedImage, previewOf, useDictation } from '@/lib/chat';
 import { toast } from '@/components/ui';
-import type { ChatAttachment, ChatMsg } from '@/lib/types';
+import type { ChatAttachment, ChatCreated, ChatMsg } from '@/lib/types';
+
+function CreatedCards({ items, onOpenDraft }: { items: ChatCreated[]; onOpenDraft?: (id: string) => void }) {
+  const router = useRouter();
+  return (
+    <div className="mt-2.5 space-y-1.5">
+      {items.map((item, i) => {
+        const Icon = item.kind === 'expense' ? Receipt
+          : item.kind === 'client' ? UserPlus
+            : item.kind === 'gst' ? Landmark
+              : FileText;
+        return (
+          <button key={`${item.kind}-${item.id ?? i}`} type="button" onClick={() => {
+            if (item.kind === 'invoice' && item.id) onOpenDraft?.(item.id);
+            router.push(item.href);
+          }}
+            className="flex w-full items-center gap-2.5 rounded-lg border border-blue/35 bg-blue/12 px-3 py-2 text-left transition hover:bg-blue/20">
+            <Icon size={15} className="shrink-0 text-blue-300" />
+            <span className="min-w-0 flex-1">
+              <span className="block font-mono text-[12.5px] text-white">{item.title}</span>
+              {item.subtitle && <span className="block truncate text-[11px] text-chrome">{item.subtitle}</span>}
+            </span>
+            {item.amount && <span className="shrink-0 font-mono text-[12.5px] text-white">{item.amount}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function ChatBubbles({ msgs, busy, onOpenDraft }: {
   msgs: ChatMsg[]; busy: boolean; onOpenDraft?: (id: string) => void;
 }) {
-  const router = useRouter();
   return (
     <>
       {msgs.map((m, i) => (
@@ -27,26 +54,23 @@ export function ChatBubbles({ msgs, busy, onOpenDraft }: {
               </div>
             )}
             {m.content && <p className="whitespace-pre-line">{m.content}</p>}
-            {m.draft && (
-              <button onClick={() => {
-                onOpenDraft?.(m.draft!.id);
-                router.push(`/invoices/${m.draft!.id}`);
-              }}
-                className="mt-2.5 flex w-full items-center gap-2.5 rounded-lg border border-blue/35 bg-blue/12 px-3 py-2 text-left transition hover:bg-blue/20">
-                <FileText size={15} className="shrink-0 text-blue-300" />
-                <span className="min-w-0 flex-1">
-                  <span className="block font-mono text-[12.5px] text-white">{m.draft.invoice_number}</span>
-                  <span className="block truncate text-[11px] text-chrome">{m.draft.client_name}</span>
-                </span>
-                <span className="shrink-0 font-mono text-[12.5px] text-white">{money(m.draft.total, m.draft.currency)}</span>
-              </button>
+            {!!m.created?.length && <CreatedCards items={m.created} onOpenDraft={onOpenDraft} />}
+            {!m.created?.length && m.draft && (
+              <CreatedCards items={[{
+                kind: 'invoice',
+                id: m.draft.id,
+                href: `/invoices/${m.draft.id}`,
+                title: m.draft.invoice_number,
+                subtitle: m.draft.client_name,
+                amount: money(m.draft.total, m.draft.currency),
+              }]} onOpenDraft={onOpenDraft} />
             )}
           </div>
         </div>
       ))}
       {busy && (
         <div className="flex items-center gap-2 text-[12.5px] text-chrome">
-          <Loader2 size={14} className="animate-spin" /> Drafting…
+          <Loader2 size={14} className="animate-spin" /> Working…
         </div>
       )}
     </>

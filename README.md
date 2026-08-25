@@ -1,186 +1,193 @@
-# Buildable Labs — Billing Portal
+# Buildable Labs — Billing
 
-A self-hosted replacement for Zoho Billing, built for **BuildableLabs LLP**: clients, GST-compliant
-invoices, quotes, retainers, expenses, input tax credit, GST filing records — and a Claude assistant
-that turns a sentence into a draft invoice.
+The invoicing and GST desk for **Buildable Labs LLP**. It replaced Zoho Billing: raise invoices, track who has paid, log expenses, keep GST numbers honest, and talk to an assistant that can actually save records — not just chat.
 
-Brand system per *Buildable Labs Brand Foundation V01* — Alloy palette (`#0B3FDE` blue, chrome,
-deep neutrals), Instrument Serif / Manrope / JetBrains Mono.
+Think of it as the flight log for money: every invoice, payment, and expense in one cockpit. You do not need to know how the aircraft is built to fly it.
+
+Live code: [github.com/Builder-Akhil/Invoice-site-bl](https://github.com/Builder-Akhil/Invoice-site-bl)
 
 ---
 
-## Get it running (about 15 minutes)
+## For the team (no coding needed)
 
-### 1. Supabase — the database
+Sign in at the website, then use the left menu. The assistant bar sits at the bottom of every screen (`⌘K` / `Ctrl+K` opens it).
 
-1. Create a free project at [supabase.com](https://supabase.com) (region: Mumbai or Singapore).
-2. Open **SQL Editor → New query**, paste the whole of `supabase/schema.sql`, and **Run**.
-   That creates every table, the atomic invoice-number function, payment triggers, row-level
-   security, and seeds your service catalog plus the AAFM India client.
-3. **Storage → New bucket** → name it `brand`, tick **Public**. (Logo + signature uploads.)
-4. **Project Settings → API** — copy `Project URL`, the `anon public` key and the `service_role` key.
+### What each screen is for
 
-### 2. Environment
+| Screen | What it is, in plain English |
+|---|---|
+| **Dashboard** | This year’s revenue, money still owed, monthly retainers (MRR), GST position, overdue list. |
+| **Clients** | Who you bill — GSTIN, Indian vs overseas, payment terms, addresses. |
+| **Services** | Your rate card (CTO retainer, advisory hours, and so on). Typing a name on an invoice fills the rest. |
+| **Invoices** | Bills you have raised. Status, total, balance. Pencil on the row flips **Paid / Unpaid** if a payment got stuck or was recorded wrong. |
+| **Quotes** | Estimates. One click turns an accepted quote into an invoice. |
+| **Retainers** | Recurring work (monthly / quarterly / yearly). The system drafts the next invoice on schedule. |
+| **Expenses** | Money the LLP spent — software, travel, hotels, reimbursements to the founder. Marks whether GST credit (ITC) can be claimed. |
+| **GST & Tax** | Period view of tax you charged, credit from expenses, cash paid to the department, challan / ARN. |
+| **Chats** | Saved conversations with the assistant, including screenshots you attached. |
+| **Settings** | Company name, GSTIN, bank, logo, signature — everything that prints on the invoice. |
+
+### Invoices, in practice
+
+1. **New invoice** — pick a client, add lines, save. GST (CGST+SGST vs IGST vs export under LUT) is chosen from *your* state vs the client’s place of supply. You can override it.
+2. **Send** — emails the PDF from your domain and gives the client a view-online link. Status becomes Sent, then Viewed when they open it.
+3. **Paid** — record a payment on the invoice, **or** tap the pencil on the Invoices list and choose Paid / Unpaid. Unpaid clears a wrong or stuck payment.
+4. **Partial payments** are allowed. The balance updates on its own.
+5. **Cancel, don’t delete**, if the invoice already has a number. GST expects an unbroken series (BL-000001, BL-000002…). Delete is only for a genuine mistake before it went out.
+
+Numbers are issued automatically (next is **BL-000017** onwards) so two people cannot grab the same number.
+
+**TDS is shown, never subtracted from the GST total.** The invoice stays at the full taxable value (for example ₹2,95,000). A line tells the client that TDS u/s 194J is theirs to deduct. When they pay short, record what actually landed and put the withheld amount in **TDS withheld** — that is your 26AS check.
+
+### Expenses and “the LLP paid me back”
+
+If you paid Airbnb or a hotel from your pocket (or moved the same amount from the LLP account to your savings), log it as a **Travel** expense with payment mode **Reimbursement**. That is company travel, not a loan the LLP owes you as founder.
+
+Airbnb and most foreign platforms have **no Indian GSTIN**, so GST credit is usually **not claimable**. Indian software bills with a GSTIN usually **are**.
+
+### Retainers (recurring invoices)
+
+Set the client, amount, and cadence. A nightly job (3:00 UTC on Vercel) drafts invoices that are due. On your laptop that job does not run — use **Retainers → Run due now**, or ask the assistant.
+
+This is **not** a second cron in Supabase. One alarm only, or you would raise two invoices for the same month.
+
+### The assistant
+
+Describe what you want in English, attach a screenshot of a receipt or rate card, or tap the mic and speak. Pause when you are done — the words fill the box; **you** press send (it does not send on its own).
+
+It can:
+
+- Create a **client**
+- Draft an **invoice** or **quote**
+- Log an **expense** (including founder reimbursement)
+- Record a **GST payment** or **ITC credit**
+- Create a **retainer**, or run due retainers
+- Mark an invoice **paid / unpaid**
+
+It understands “2.5L”, “50k”, “1cr”. After it *actually* saves something, you get a card in the chat — tap it to open the record. If you only see “Done.” and no card, nothing was written; ask again or add the amount and date.
+
+**Examples**
+
+- *Invoice AAFM India 2.5L for Consulting CTO, 15 Aug – 15 Sept*
+- *Log Cursor Pro ₹2,000 as software, ITC eligible*
+- *Log this Airbnb as travel, reimbursement, no GST* (attach the receipt)
+- *GSTR-3B Aug 2026, ₹18,000 IGST paid, ₹5,000 ITC*
+- *Monthly retainer for AAFM at 2.5L on the 1st*
+
+Chats are saved under **Chats**. History, images, and voice live there.
+
+### Not built yet
+
+Recurring **expenses** (a hotel that repeats every month on a timer). Retainers only generate **invoices** (money in). Monthly spend is still logged by hand or via chat each time.
+
+---
+
+## For developers
+
+Stack: **Next.js 14**, **Supabase** (Postgres + Auth), **Claude** (Anthropic), **Resend** (email), **Vercel** (hosting + daily cron). Node 18.18+.
+
+### Clone and run locally
 
 ```bash
-cp .env.example .env.local
-```
-
-| Variable | Where it comes from | Needed for |
-|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API | everything |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | same page | everything |
-| `SUPABASE_SERVICE_ROLE_KEY` | same page (keep secret) | PDFs, email, public links, cron |
-| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000`, later your live URL | share links in emails |
-| `RESEND_API_KEY` | [resend.com](https://resend.com) → API Keys | Send to client |
-| `INVOICE_FROM_EMAIL` | e.g. `Buildable Labs <billing@buildablelabs.com>` | Send to client |
-| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) | the chat assistant |
-| `CRON_SECRET` | any random string | recurring invoice cron |
-
-### 3. Run it
-
-```bash
+git clone https://github.com/Builder-Akhil/Invoice-site-bl.git
+cd Invoice-site-bl
 npm install
+cp .env.example .env.local
+# fill .env.local — see table below
 npm run dev
 ```
 
-Open <http://localhost:3000>, click **First time here? Create your account**, sign up with
-`akhil@buildablelabs.com`. Then go to **Profile & Settings** and fill in your address, GSTIN,
-bank details, logo and signature — everything there prints on the invoice.
+Open [http://localhost:3000](http://localhost:3000). First visit: **Create your account**, then **Settings** for GSTIN, bank, logo.
 
-> **Lock it down once your team has signed up:** Supabase → Authentication → Providers → Email →
-> turn **Allow new users to sign up** off. Add teammates yourself under Authentication → Users.
-> Every signed-in user shares one workspace — that is what the RLS policy in the schema does.
+Optional: copy `.env.example` to `.env` if you prefer that filename; both `.env` and `.env.local` are gitignored. **Never commit real keys.**
 
-### 4. Deploy on Vercel
+### Environment variables
 
-The production build is `npm run build`. Cron, Node version, and env templates are already set
-for Vercel — you only paste secrets and point the live URL.
+| Variable | Where it comes from | Used for |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API | App + database |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | same page | Browser sign-in |
+| `SUPABASE_SERVICE_ROLE_KEY` | same page (secret) | PDFs, public invoice links, email, cron |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000`, then the live Vercel URL | Links in emails |
+| `RESEND_API_KEY` | [resend.com](https://resend.com) → API Keys | Send invoice to client |
+| `INVOICE_FROM_EMAIL` | Verified domain, e.g. `Buildable Labs <billing@updates.buildablelabs.com>` | From address |
+| `INVOICE_BCC_EMAIL` | Optional | BCC a copy to yourself |
+| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) | Assistant |
+| `ANTHROPIC_MODEL` | e.g. `claude-sonnet-5` | Which Claude |
+| `CRON_SECRET` | Any long random string | Protects `/api/cron/recurring` |
 
-1. Push this repo to GitHub (see below), then import it at [vercel.com/new](https://vercel.com/new).
-2. Framework: **Next.js** (auto-detected). Root directory: `.`
-3. Paste every variable from `.env.example` into **Settings → Environment Variables**
-   (Production + Preview). Use real keys — never commit `.env`.
-4. Deploy once. Copy the URL (e.g. `https://invoice-site-bl.vercel.app`).
-5. Set `NEXT_PUBLIC_APP_URL` to that URL and **redeploy** so emails and public invoice links
-   are not still pointing at localhost.
-6. In **Supabase → Authentication → URL Configuration**:
-   - Site URL = your Vercel URL
-   - Redirect URLs = `https://your-app.vercel.app/**` (and localhost for dev)
-7. `vercel.json` already registers a daily **03:00 UTC** cron that generates due retainer
-   invoices (`GET /api/cron/recurring`, guarded by `CRON_SECRET`). Hobby plans allow one
-   daily cron — this schedule fits. Do not add a second cron in Supabase for the same job.
+### Supabase (once per project)
 
-The assistant route allows 60s (`maxDuration`). Long chats can time out on the free Hobby
-plan; Pro is the comfortable cockpit for Claude + tools.
+1. Create a project ([supabase.com](https://supabase.com)) — Mumbai or Singapore is fine.
+2. **SQL Editor** → paste all of `supabase/schema.sql` → **Run**. Tables, invoice numbering, payment triggers, RLS, seed catalog.
+3. **Storage → New bucket** named `brand`, **Public** (logo + signature).
+4. Copy URL, anon key, and service-role key into `.env.local`.
+5. After the team has accounts: **Authentication → Providers → Email** → turn **Allow new users to sign up** off. Invite people under **Authentication → Users**. Everyone signed in shares one workspace.
 
-For deliverability, verify `buildablelabs.com` in Resend (DNS records) so invoices arrive from
-your own domain rather than a shared sender.
+**Auth URLs** (needed on Vercel): Site URL = your live app URL. Redirect URLs = `https://your-app.vercel.app/**` and `http://localhost:3000/**`.
 
-### GitHub accounts — switch from the command line
-
-You can stay logged into several GitHub users (personal, Builder-Akhil, …) and pick the
-active one like swapping pilots. No logout each time.
+Zoho CSV seed (local only — those files are gitignored because they hold real GSTINs and emails):
 
 ```bash
-./scripts/gh-use.sh login              # add an account (others stay signed in)
-./scripts/gh-use.sh Builder-Akhil      # fly as Builder-Akhil
-./scripts/gh-use.sh AkhilKumar-Git     # fly as the other profile
+node --env-file=.env scripts/seed-zoho.mjs
+```
+
+### Deploy on Vercel
+
+`npm run build` is what Vercel runs. Cron and Node version are already in the repo.
+
+1. Push `main` to [Builder-Akhil/Invoice-site-bl](https://github.com/Builder-Akhil/Invoice-site-bl) (keep the GitHub repo **private** if you can — this is a billing app).
+2. Import at [vercel.com/new](https://vercel.com/new). Framework: Next.js. Root: `.`
+3. Paste every variable from `.env.example` into **Settings → Environment Variables** (Production + Preview), with **real** secrets.
+4. Deploy once, copy the URL, set `NEXT_PUBLIC_APP_URL` to it, **redeploy**.
+5. Point Supabase Site URL / redirects at that URL.
+6. Verify `buildablelabs.com` in Resend (DNS) so mail is not stuck on a shared sender.
+
+`vercel.json` registers `GET /api/cron/recurring` daily at **03:00 UTC**, guarded by `CRON_SECRET`. Hobby allows one daily cron — this fits. Do **not** add pg_cron in Supabase for the same job.
+
+Chat is allowed 60 seconds (`maxDuration`). Long receipt + tools runs are more comfortable on Vercel Pro; Hobby can time out.
+
+### GitHub accounts (no login/logout every time)
+
+Stay signed into several users and switch:
+
+```bash
+./scripts/gh-use.sh login              # add an account; others stay
+./scripts/gh-use.sh Builder-Akhil      # use this project’s account
 ./scripts/gh-use.sh                     # who is active
 ./scripts/gh-use.sh logout some-user   # drop one account only
 ```
 
-Same thing via npm: `npm run gh:login` / `npm run gh:use -- Builder-Akhil` / `npm run gh:who`.
+Or `npm run gh:login` / `npm run gh:use -- Builder-Akhil` / `npm run gh:who`.
 
-Commit name + email per GitHub user lives in `~/.config/gh-identities` (created on first
-login). Switching applies it to **this repo only**, not your global git identity.
+Commit name and email per GitHub user: `~/.config/gh-identities` (this repo only). Docs: [Using multiple accounts](https://docs.github.com/en/github-cli/github-cli/using-multiple-accounts).
 
-GitHub CLI docs: [Using multiple accounts](https://docs.github.com/en/github-cli/github-cli/using-multiple-accounts).
+### Useful scripts
 
----
-
-## What's inside
-
-**Dashboard** — net revenue for the financial year (ex-GST), outstanding, MRR from active
-retainers, this month's GST position, a 12-month billed-vs-received chart, top clients, and an
-overdue chase list.
-
-**Clients** — contact person, work phone, CC emails, GST treatment (registered / unregistered /
-consumer / overseas / SEZ with or without payment / deemed export), GSTIN with auto-derived PAN
-and place of supply, billing and shipping addresses, payment terms, default SAC and GST rate, and
-per-client TDS settings. Billed and outstanding totals per client.
-
-**Services catalog** — reusable line items with SAC/HSN codes, unit (hour / month / project /
-user…), rate and GST rate. Typing a name into an invoice line auto-fills the rest.
-
-**Invoices & quotes**
-
-- The number series continues from **BL-000017** automatically, assigned atomically at save so two
-  people can never collide. One click switches to a manual number when a client mandates one.
-- Per-line SAC/HSN code, quantity or hours, rate, discount, GST rate.
-- Tax treatment auto-resolves from your state (Telangana, 36) against the place of supply:
-  same state → **CGST + SGST**, different state → **IGST**, overseas or SEZ-under-LUT →
-  **zero-rated** with the LUT declaration printed. Always overridable per invoice.
-- Editable invoice date, terms (Due on receipt / Net 7–60 / Custom), due date, subject,
-  PO number, notes, terms and internal notes.
-- Multi-currency with an exchange rate that keeps INR reporting honest.
-- Live preview of the exact document, print, PDF download.
-- **Send** — Resend delivers it from your domain with the PDF attached, plus a public
-  view-online link; status flips to Sent, then Viewed when the client opens it.
-- **Record payment** — partial payments supported; a database trigger recalculates the balance
-  and moves the invoice to Part paid / Paid / Overdue on its own.
-- Duplicate, cancel, delete; quotes convert to invoices in one click.
-
-**Retainers** — recurring profiles (weekly / monthly / quarterly / yearly) that generate draft
-invoices on schedule and feed the MRR and ARR figures. "Run due now" generates on demand.
-
-**Expenses** — vendor, GSTIN, category, HSN/SAC, taxable amount with a CGST+SGST / IGST / no-GST
-split, ITC-claimable flag, reverse charge, multi-currency, optional rebill-to-client tag and
-receipt link. Category breakdown and CSV export.
-
-**GST & Tax** — monthly (GSTR-3B) or quarterly (QRMP) view of taxable outward supply, CGST, SGST,
-IGST, zero-rated exports, input tax credit from expenses, and net payable. Record each payment
-with challan number, ARN, interest and late fee; settled periods are marked. GSTR-1 style CSV
-export per period.
-
-**Assistant** — the bar at the bottom of every screen. Type *"Invoice AAFM India 2.5L for
-Consulting CTO, Aug 15 – Sept 15"* and Claude matches the client, applies the right GST treatment,
-and leaves a draft for you to review. It understands lakh/crore shorthand, pulls SAC codes from
-your catalog, and will create a new client if you give it the details. `⌘K` opens it from anywhere.
-
----
-
-## Two things worth knowing
-
-**TDS is tracked, never deducted.** Your BL-000016 subtracted ₹25,000 "Amount Withheld" from the
-total. As you asked, this portal keeps the invoice total at the full ₹2,95,000 — the legally
-correct GST document value — and prints a line stating that TDS u/s 194J is to be deducted by the
-recipient, showing the net remittance. When the money arrives short, record the payment as the net
-amount received and log the TDS in the **TDS withheld** field; the dashboard's *TDS receivable*
-figure is then your 26AS reconciliation.
-
-**Cancel rather than delete.** GST rules expect an unbroken invoice series. Cancel keeps the number
-in the series; Delete exists for genuine mistakes only.
-
----
-
-## Project layout
-
-```
-supabase/schema.sql          full database, RLS, numbering + payment triggers
-src/lib/gst.ts               state codes, CGST/SGST vs IGST engine, line + total maths
-src/lib/format.ts            INR grouping, lakh/crore words, financial year, CSV
-src/lib/invoice-service.ts   client-side save/load for invoices
-src/lib/server-invoice.ts    server-side draft creation (used by the assistant)
-src/lib/recurring.ts         retainer generation
-src/lib/pdf/                 @react-pdf document + render helper
-src/components/InvoicePaper  the on-screen document
-src/app/(app)/               dashboard, invoices, quotes, clients, services,
-                             retainers, expenses, GST, settings
-src/app/i/[token]/           public client-facing invoice view
-src/app/api/                 chat · pdf · send · cron
+```bash
+npm run dev          # local app
+npm run build        # production build (same as Vercel)
+npx tsx --env-file=.env scripts/verify-assistant-tools.ts
+                     # live-check chat tools (expense, client, GST, invoice), then deletes the test rows
 ```
 
-Verified before hand-off: the production build passes, and the GST engine and PDF renderer are
-covered by checks reproducing BL-000016 (Telangana → Uttar Pradesh, 18% IGST), an intra-state
-9 + 9 split, and a zero-rated export under LUT.
+### Layout
+
+```
+supabase/schema.sql          database, RLS, numbering, payment triggers
+src/lib/gst.ts               CGST+SGST vs IGST vs LUT
+src/lib/assistant-tools.ts   chat tools (client, invoice, expense, GST, retainer, paid)
+src/lib/invoice-status.ts    Paid / Unpaid from the list or chat
+src/lib/recurring.ts         retainer → draft invoice
+src/lib/chat.ts              images, voice, history helpers
+src/app/api/chat             assistant
+src/app/api/cron/recurring   nightly retainers
+src/app/(app)/               signed-in pages
+src/app/i/[token]/           public invoice link for the client
+scripts/gh-use.sh            GitHub profile switch
+scripts/seed-zoho.mjs        optional CSV import (local)
+```
+
+### GST engine (quick)
+
+Supplier is Telangana (36). Same state as the client → CGST + SGST. Other Indian state → IGST. Overseas / SEZ under LUT → zero-rated. Always overridable on the invoice. The PDF and on-screen paper share the same figures.

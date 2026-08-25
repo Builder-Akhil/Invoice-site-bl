@@ -64,8 +64,8 @@ export default function ChatWorkspace({ conversationId }: { conversationId?: str
         conversationId: conversationId ?? null,
         images,
       });
-      setMsgs([...next, { role: 'assistant', content: j.reply, draft: j.draft }]);
-      if (j.draft) router.refresh();
+      setMsgs([...next, { role: 'assistant', content: j.reply, draft: j.draft, created: j.created }]);
+      if (j.draft || j.created?.length) router.refresh();
       if (!conversationId) router.replace(`/chats/${j.conversation_id}`);
       else loadList();
     } catch (e) {

@@ -181,11 +181,26 @@ export interface ChatDraft {
   client_name: string;
 }
 
+/** A record the assistant actually wrote to the database. */
+export interface ChatCreated {
+  kind: 'invoice' | 'expense' | 'client' | 'gst' | 'retainer' | 'status';
+  href: string;
+  title: string;
+  subtitle?: string;
+  amount?: string;
+  id?: string;
+  invoice_number?: string;
+  total?: number;
+  currency?: string;
+  client_name?: string;
+}
+
 export interface ChatMsg {
   role: 'user' | 'assistant';
   content: string;
   attachments?: ChatAttachment[];
   draft?: ChatDraft | null;
+  created?: ChatCreated[];
 }
 
 export interface Conversation {
@@ -202,7 +217,7 @@ export interface ConversationMessage {
   role: 'user' | 'assistant';
   content: string;
   attachments: ChatAttachment[];
-  draft: ChatDraft | null;
+  draft: ChatDraft | ChatCreated | ChatCreated[] | null;
   created_at: string;
 }
 
@@ -213,5 +228,6 @@ export const PAYMENT_MODES = [
   { value: 'cheque', label: 'Cheque' },
   { value: 'card', label: 'Card' },
   { value: 'cash', label: 'Cash' },
+  { value: 'reimbursement', label: 'Reimbursement (founder / staff)' },
   { value: 'other', label: 'Other' },
 ];

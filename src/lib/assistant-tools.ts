@@ -4,7 +4,8 @@ import { createDraftServer, type DraftInput } from './server-invoice';
 import { generateFromProfile } from './recurring';
 import { setInvoicePaidStatus } from './invoice-status';
 import { computeTotals, stateCodeFromGstin, stateNameByCode } from './gst';
-import { EXPENSE_CATEGORIES, type CompanyProfile, type Invoice, type InvoiceLine, type RecurringProfile, type Client } from './types';
+import { EXPENSE_CATEGORIES, type ChatCreated, type CompanyProfile, type Invoice, type InvoiceLine, type RecurringProfile, type Client } from './types';
+import { money } from './format';
 
 export const assistantTools: Anthropic.Tool[] = [
   {
@@ -83,7 +84,12 @@ export const assistantTools: Anthropic.Tool[] = [
         bill_number: { type: 'string' },
         itc_eligible: { type: 'boolean' },
         currency: { type: 'string' },
-        payment_mode: { type: 'string' },
+        payment_mode: {
+          type: 'string',
+          enum: ['bank_transfer', 'upi', 'wire', 'cheque', 'card', 'cash', 'reimbursement', 'other'],
+          description: 'reimbursement = founder/staff paid personally and LLP repaid the same amount',
+        },
+        paid_by: { type: 'string', description: 'Name of the person reimbursed, if payment_mode is reimbursement' },
       },
       required: ['vendor_name', 'taxable_amount'],
     },
@@ -183,7 +189,7 @@ export async function executeAssistantTool(
   raw: unknown,
   company: CompanyProfile | null,
   actor?: string | null,
-): Promise<{ result: unknown; draft?: ToolCreatedDraft }> {
+): Promise<{ result: unknown; draft?: ToolCreatedDraft; created?: ChatCreated }> {
   const input = (raw ?? {}) as Record<string, unknown>;
   const today = new Date().toISOString().slice(0, 10);
 
@@ -191,19 +197,48 @@ export async function executeAssistantTool(
     const gstin = String(input.gstin ?? '');
     const code = gstin.length >= 2 ? gstin.slice(0, 2) : stateCodeFromGstin(gstin);
     const { data, error } = await supabase.from('clients').insert({
-      ...input,
+      company_name: input.company_name,
+      contact_person: input.contact_person ?? null,
+      email: input.email ?? null,
+      work_phone: input.work_phone ?? null,
       gstin: gstin || null,
+      gst_treatment: input.gst_treatment || 'unregistered_business',
+      bill_line1: input.bill_line1 ?? null,
+      bill_city: input.bill_city ?? null,
+      bill_state: input.bill_state ?? null,
+      bill_pincode: input.bill_pincode ?? null,
+      bill_country: input.bill_country ?? 'India',
+      currency: input.currency || 'INR',
+      payment_terms_days: Number(input.payment_terms_days ?? 7),
       place_of_supply_code: code || undefined,
       place_of_supply_state: stateNameByCode(code) || undefined,
       is_overseas: input.gst_treatment === 'overseas',
     }).select('id, company_name').single();
     if (error) throw error;
-    return { result: data };
+    return {
+      result: data,
+      created: { kind: 'client', id: data.id, href: '/clients', title: data.company_name, subtitle: 'Client created' },
+    };
   }
 
   if (name === 'create_draft_invoice') {
     const draft = await createDraftServer(supabase, input as unknown as DraftInput, company);
-    return { result: draft, draft };
+    return {
+      result: draft,
+      draft,
+      created: {
+        kind: 'invoice',
+        id: draft.id,
+        href: `/invoices/${draft.id}`,
+        title: draft.invoice_number,
+        subtitle: draft.client_name,
+        amount: money(draft.total, draft.currency),
+        invoice_number: draft.invoice_number,
+        total: draft.total,
+        currency: draft.currency,
+        client_name: draft.client_name,
+      },
+    };
   }
 
   if (name === 'create_expense') {
@@ -212,6 +247,8 @@ export async function executeAssistantTool(
     const rate = split === 'none' ? 0 : Number(input.gst_rate ?? 18);
     const igst = split === 'igst' ? +(taxable * rate / 100).toFixed(2) : 0;
     const half = split === 'cgst_sgst' ? +(taxable * rate / 200).toFixed(2) : 0;
+    const total = +(taxable + igst + half * 2).toFixed(2);
+    const currency = String(input.currency || 'INR');
     const { data, error } = await supabase.from('expenses').insert({
       vendor_name: input.vendor_name,
       expense_date: input.expense_date || today,
@@ -224,13 +261,24 @@ export async function executeAssistantTool(
       cgst_amount: half,
       sgst_amount: half,
       igst_amount: igst,
-      total_amount: +(taxable + igst + half * 2).toFixed(2),
-      itc_eligible: input.itc_eligible !== false,
-      currency: input.currency || 'INR',
+      total_amount: total,
+      itc_eligible: input.itc_eligible ?? split !== 'none',
+      currency,
       payment_mode: input.payment_mode || 'bank_transfer',
+      paid_by: input.paid_by ?? (input.payment_mode === 'reimbursement' ? actor ?? null : null),
     }).select('id, vendor_name, total_amount, currency').single();
     if (error) throw error;
-    return { result: data };
+    return {
+      result: data,
+      created: {
+        kind: 'expense',
+        id: data.id,
+        href: '/expenses',
+        title: data.vendor_name,
+        subtitle: 'Expense logged',
+        amount: money(Number(data.total_amount), data.currency),
+      },
+    };
   }
 
   if (name === 'create_gst_payment') {
@@ -261,7 +309,17 @@ export async function executeAssistantTool(
       : supabase.from('gst_payments').insert(payload);
     const { data, error } = await q.select('id, period, return_type, total_paid, itc_utilised').single();
     if (error) throw error;
-    return { result: data };
+    return {
+      result: data,
+      created: {
+        kind: 'gst',
+        id: data.id,
+        href: '/gst',
+        title: `${data.return_type} ${data.period}`,
+        subtitle: Number(data.itc_utilised) > 0 ? `ITC credit ${money(Number(data.itc_utilised))}` : 'GST payment recorded',
+        amount: money(Number(data.total_paid)),
+      },
+    };
   }
 
   if (name === 'create_retainer') {
@@ -297,7 +355,17 @@ export async function executeAssistantTool(
       is_active: true,
     }).select('id, title, next_run_date, amount, frequency').single();
     if (error) throw error;
-    return { result: data };
+    return {
+      result: data,
+      created: {
+        kind: 'retainer',
+        id: data.id,
+        href: '/recurring',
+        title: data.title,
+        subtitle: `${data.frequency} · next ${data.next_run_date}`,
+        amount: money(Number(data.amount)),
+      },
+    };
   }
 
   if (name === 'run_due_retainers') {
@@ -306,18 +374,26 @@ export async function executeAssistantTool(
     q = retainerId ? q.eq('id', retainerId) : q.lte('next_run_date', today);
     const { data: profiles, error } = await q;
     if (error) throw error;
-    const created: string[] = [];
+    const invoiceNumbers: string[] = [];
     const failed: string[] = [];
     for (const p of (profiles ?? []) as (RecurringProfile & { clients: Client })[]) {
       if (p.end_date && p.end_date < today) continue;
       try {
         const inv = await generateFromProfile(supabase, p, company, retainerId ? today : undefined);
-        created.push(inv.invoice_number);
+        invoiceNumbers.push(inv.invoice_number);
       } catch (e) {
         failed.push(`${p.title}: ${e instanceof Error ? e.message : 'error'}`);
       }
     }
-    return { result: { created, failed, checked: profiles?.length ?? 0 } };
+    return {
+      result: { created: invoiceNumbers, failed, checked: profiles?.length ?? 0 },
+      created: invoiceNumbers.length ? {
+        kind: 'invoice' as const,
+        href: '/invoices',
+        title: invoiceNumbers.join(', '),
+        subtitle: 'Retainer drafts generated',
+      } : undefined,
+    };
   }
 
   if (name === 'set_invoice_paid') {
@@ -326,7 +402,16 @@ export async function executeAssistantTool(
     if (error) throw error;
     if (!inv) throw new Error(`No invoice numbered ${number}`);
     const updated = await setInvoicePaidStatus(supabase, inv as Invoice, !!input.paid, actor);
-    return { result: { invoice_number: updated.invoice_number, status: updated.status, balance_due: updated.balance_due } };
+    return {
+      result: { invoice_number: updated.invoice_number, status: updated.status, balance_due: updated.balance_due },
+      created: {
+        kind: 'status',
+        id: updated.id,
+        href: `/invoices/${updated.id}`,
+        title: updated.invoice_number,
+        subtitle: updated.status === 'paid' ? 'Marked paid' : 'Marked unpaid',
+      },
+    };
   }
 
   throw new Error(`Unknown tool ${name}`);

@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChatAttachment, ChatDraft, ChatMsg, ConversationMessage } from './types';
+import type { ChatAttachment, ChatCreated, ChatDraft, ChatMsg, ConversationMessage } from './types';
 
 export function titleFrom(text: string) {
   const t = text.replace(/\s+/g, ' ').trim();
@@ -12,13 +12,51 @@ export function previewOf(att: ChatAttachment) {
   return att.preview || `data:${att.media_type};base64,${att.data}`;
 }
 
+export function normalizeCreated(raw: unknown): ChatCreated[] {
+  if (!raw) return [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  const out: ChatCreated[] = [];
+  for (const item of list) {
+    const d = item as Partial<ChatCreated & ChatDraft>;
+    if (d.kind && d.href) {
+      out.push(d as ChatCreated);
+      continue;
+    }
+    if (d.invoice_number && d.id) {
+      out.push({
+        kind: 'invoice',
+        id: d.id,
+        href: `/invoices/${d.id}`,
+        title: d.invoice_number,
+        subtitle: d.client_name,
+        invoice_number: d.invoice_number,
+        total: d.total,
+        currency: d.currency,
+        client_name: d.client_name,
+      });
+    }
+  }
+  return out;
+}
+
 export function dbMessagesToChat(rows: ConversationMessage[]): ChatMsg[] {
-  return rows.map((r) => ({
-    role: r.role,
-    content: r.content,
-    attachments: Array.isArray(r.attachments) ? r.attachments : [],
-    draft: r.draft ?? null,
-  }));
+  return rows.map((r) => {
+    const created = normalizeCreated(r.draft);
+    const invoice = created.find((c) => c.kind === 'invoice');
+    return {
+      role: r.role,
+      content: r.content,
+      attachments: Array.isArray(r.attachments) ? r.attachments : [],
+      created,
+      draft: invoice ? {
+        id: invoice.id ?? '',
+        invoice_number: invoice.invoice_number ?? invoice.title,
+        total: invoice.total ?? 0,
+        currency: invoice.currency ?? 'INR',
+        client_name: invoice.client_name ?? invoice.subtitle ?? '',
+      } : null,
+    };
+  });
 }
 
 export async function sendChat(args: {
@@ -26,7 +64,7 @@ export async function sendChat(args: {
   history: { role: 'user' | 'assistant'; content: string }[];
   conversationId?: string | null;
   images?: ChatAttachment[];
-}): Promise<{ reply: string; draft: ChatDraft | null; conversation_id: string }> {
+}): Promise<{ reply: string; draft: ChatDraft | null; created: ChatCreated[]; conversation_id: string }> {
   const images = (args.images ?? []).map(({ media_type, data }) => ({ media_type, data }));
   const res = await fetch('/api/chat', {
     method: 'POST',
@@ -40,7 +78,12 @@ export async function sendChat(args: {
   });
   const j = await res.json();
   if (!res.ok) throw new Error(j.error ?? 'Assistant failed');
-  return j;
+  return {
+    reply: j.reply,
+    draft: j.draft ?? null,
+    created: normalizeCreated(j.created ?? j.draft),
+    conversation_id: j.conversation_id,
+  };
 }
 
 const ALLOWED: ChatAttachment['media_type'][] = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
