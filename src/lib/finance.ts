@@ -49,7 +49,10 @@ export function gstDueByMonth(invoices: Invoice[], expenses: Expense[]): Map<str
   };
   for (const i of invoices) {
     if (i.status === 'draft' || i.status === 'cancelled') continue;
-    const k = i.invoice_date.slice(0, 7);
+    if (i.status !== 'paid' && Number(i.balance_due) > 0.5) continue;
+    const collected = (i.paid_at || i.invoice_date || '').slice(0, 10);
+    if (!collected) continue;
+    const k = collected.slice(0, 7);
     bump(k).output += fxInr(
       Number(i.cgst_total) + Number(i.sgst_total) + Number(i.igst_total),
       i.exchange_rate,

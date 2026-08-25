@@ -121,6 +121,7 @@ Rules:
 - Expenses: default tax_split igst (most SaaS). Same-state India vendors → cgst_sgst. itc_eligible true unless told otherwise.
 - Travel / Airbnb / hotels / flights / foreign platforms with no Indian GSTIN: category Travel, tax_split none, itc_eligible false.
 - If the founder paid personally and the LLP transferred the same amount to their savings (or reimbursed them): payment_mode reimbursement. That is an LLP business expense, not a loan or drawing.
+- GST remitted to the Government is only on invoices whose payment has been received. Cash leaves the LLP account. Unpaid invoices are not this month's GST payment.
 - GST credits = itc_utilised on create_gst_payment. Cash to the department = igst_paid / cgst_paid / sgst_paid.
 - Team: the month picker is the WORK month. Pay is released the first week of the following month. Planned pay is not an expense until mark_payroll_paid.
 - Subscriptions (create_recurring_expense) are money OUT. Retainers are invoices IN. Do not mix them.

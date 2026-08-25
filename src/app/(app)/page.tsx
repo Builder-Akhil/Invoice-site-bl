@@ -114,7 +114,7 @@ export default function Dashboard() {
     { label: `Net revenue · ${fy.label}`, value: moneyShort(books.billed), icon: TrendingUp, tone: 'text-white', sub: 'Taxable billed, excluding GST' },
     { label: 'Net after expenses', value: moneyShort(books.netAfterExpenses), icon: Wallet, tone: books.netAfterExpenses >= 0 ? 'text-emerald-300' : 'text-red-300', sub: 'Billed − expense taxable (ex-GST)' },
     { label: 'Typical team burn', value: moneyShort(books.typicalPayroll), icon: UsersRound, tone: 'text-amber-300', sub: 'Active crew, every line at maximum' },
-    { label: 'GST due this month', value: moneyShort(books.gstThisMonth), icon: Landmark, tone: 'text-blue-300', sub: 'Output − ITC' },
+    { label: 'GST due this month', value: moneyShort(books.gstThisMonth), icon: Landmark, tone: 'text-blue-300', sub: 'On payments received, minus ITC' },
     { label: 'Runway', value: runwayValue, icon: Fuel, tone: runway.missingCash ? 'text-chrome' : 'text-white', sub: runwaySub, href: runway.missingCash ? '/settings' : undefined },
   ];
 
@@ -155,7 +155,7 @@ export default function Dashboard() {
 
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
         <div className="space-y-5 min-w-0">
-          <Card title="In, out, net (ex-GST)" subtitle="Last 12 months · Out stacks expense taxable + GST due that month">
+          <Card title="In, out, net (ex-GST)" subtitle="Last 12 months · Out stacks expense taxable + GST on payments received that month">
             <div className="flex h-[200px] items-end gap-1.5">
               {series.map((m) => {
                 const out = m.expense + m.gst;
