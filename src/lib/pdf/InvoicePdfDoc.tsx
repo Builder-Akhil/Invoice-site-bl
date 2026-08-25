@@ -1,11 +1,14 @@
-/* Server-side PDF for invoices & quotes. Uses built-in Helvetica so rendering
-   never depends on fetching a remote font at request time. */
+/* Server-side PDF for invoices & quotes. Manrope matches the on-screen preview
+   and includes ₹ — Helvetica does not, and drew a ghost "1" under the totals. */
 import React from 'react';
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { join } from 'node:path';
 import type { Client, CompanyProfile, Invoice, InvoiceLine } from '../types';
 import { amountInWords, fmtDate, money, num, qtyFmt } from '../format';
 import { BRAND_LOGO } from '../brand';
+import { PDF_SANS, registerPdfFonts } from './fonts';
+
+registerPdfFonts();
 
 function pdfLogoSrc(url?: string | null) {
   const v = (url ?? '').trim();
@@ -21,18 +24,18 @@ const MUTED = '#4A5162';
 const FAINT = '#7A8296';
 
 const s = StyleSheet.create({
-  page: { paddingTop: 34, paddingBottom: 46, paddingHorizontal: 34, fontSize: 9, fontFamily: 'Helvetica', color: INK },
+  page: { paddingTop: 34, paddingBottom: 46, paddingHorizontal: 34, fontSize: 9, fontFamily: PDF_SANS, color: INK },
   row: { flexDirection: 'row' },
   between: { flexDirection: 'row', justifyContent: 'space-between' },
-  h1: { fontSize: 20, color: BLUE, fontFamily: 'Helvetica-Bold' },
+  h1: { fontSize: 20, color: BLUE, fontFamily: PDF_SANS, fontWeight: 700 },
   metaLabel: { color: MUTED, fontSize: 8.5 },
-  metaValue: { color: INK, fontSize: 8.5, fontFamily: 'Helvetica-Bold' },
+  metaValue: { color: INK, fontSize: 8.5, fontFamily: PDF_SANS, fontWeight: 700 },
   small: { fontSize: 8, color: MUTED, lineHeight: 1.5 },
-  th: { color: '#fff', fontSize: 7.6, fontFamily: 'Helvetica-Bold', paddingVertical: 6, paddingHorizontal: 5 },
+  th: { color: '#fff', fontSize: 7.6, fontFamily: PDF_SANS, fontWeight: 700, paddingVertical: 6, paddingHorizontal: 5 },
   td: { fontSize: 8, paddingVertical: 7, paddingHorizontal: 5, color: INK },
   totalRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 3 },
   totalLabel: { width: 120, textAlign: 'right', fontSize: 8.5, color: MUTED, paddingRight: 10 },
-  totalValue: { width: 95, textAlign: 'right', fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: INK },
+  totalValue: { width: 95, textAlign: 'right', fontSize: 8.5, fontFamily: PDF_SANS, fontWeight: 700, color: INK },
   footer: { position: 'absolute', bottom: 22, left: 34, right: 34, textAlign: 'center',
     fontSize: 7, color: '#9AA2B3', borderTopWidth: 0.5, borderTopColor: '#E6E8EE', paddingTop: 7 },
 });
@@ -60,7 +63,7 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
 
   const T = ({ label, value, bold, color }: { label: string; value: string; bold?: boolean; color?: string }) => (
     <View style={s.totalRow}>
-      <Text style={[s.totalLabel, bold ? { fontFamily: 'Helvetica-Bold', color: INK } : {}, color ? { color } : {}]}>{label}</Text>
+      <Text style={[s.totalLabel, bold ? { fontFamily: PDF_SANS, fontWeight: 700, color: INK } : {}, color ? { color } : {}]}>{label}</Text>
       <Text style={[s.totalValue, color ? { color } : {}]}>{value}</Text>
     </View>
   );
@@ -72,13 +75,13 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
         <View style={s.between}>
           <View style={{ width: '55%' }}>
             <Text style={s.h1}>{isQuote ? 'QUOTATION' : 'TAX INVOICE'}</Text>
-            <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold', marginTop: 6 }}>
+            <Text style={{ fontSize: 9, fontFamily: PDF_SANS, fontWeight: 700, marginTop: 6 }}>
               {isQuote ? 'Quote#' : 'Invoice#'} {invoice.invoice_number}
             </Text>
             {!isQuote && (
               <View style={{ marginTop: 16 }}>
-                <Text style={{ fontSize: 7.5, color: MUTED, fontFamily: 'Helvetica-Bold' }}>Balance Due</Text>
-                <Text style={{ fontSize: 14, fontFamily: 'Helvetica-Bold', marginTop: 3 }}>
+                <Text style={{ fontSize: 7.5, color: MUTED, fontFamily: PDF_SANS, fontWeight: 700 }}>Balance Due</Text>
+                <Text style={{ fontSize: 14, fontFamily: PDF_SANS, fontWeight: 800, marginTop: 3 }}>
                   {money(invoice.balance_due ?? invoice.total, cur)}
                 </Text>
               </View>
@@ -86,10 +89,10 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
           </View>
           <View style={{ width: '42%', alignItems: 'flex-end' }}>
             <Image src={pdfLogoSrc(profile?.logo_url)} style={{ height: 44, objectFit: 'contain', marginBottom: 8 }} />
-            <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold', textAlign: 'right' }}>{profile?.legal_name}</Text>
+            <Text style={{ fontSize: 9, fontFamily: PDF_SANS, fontWeight: 700, textAlign: 'right' }}>{profile?.legal_name}</Text>
             {supplierAddr.map((l, i) => <Text key={i} style={[s.small, { textAlign: 'right' }]}>{l}</Text>)}
             {profile?.email ? <Text style={[s.small, { textAlign: 'right' }]}>{profile.email}</Text> : null}
-            {profile?.gstin ? <Text style={{ fontSize: 8, fontFamily: 'Helvetica-Bold', marginTop: 2 }}>GSTIN: {profile.gstin}</Text> : null}
+            {profile?.gstin ? <Text style={{ fontSize: 8, fontFamily: PDF_SANS, fontWeight: 700, marginTop: 2 }}>GSTIN: {profile.gstin}</Text> : null}
           </View>
         </View>
 
@@ -108,10 +111,10 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
           </View>
           <View style={{ width: '46%' }}>
             <Text style={[s.metaLabel, { marginBottom: 4 }]}>Bill To</Text>
-            <Text style={{ fontSize: 9.5, color: BLUE, fontFamily: 'Helvetica-Bold' }}>{client?.company_name ?? '-'}</Text>
+            <Text style={{ fontSize: 9.5, color: BLUE, fontFamily: PDF_SANS, fontWeight: 700 }}>{client?.company_name ?? '-'}</Text>
             {client?.contact_person ? <Text style={[s.small, { color: INK }]}>{client.contact_person}</Text> : null}
             {billAddr.map((l, i) => <Text key={i} style={s.small}>{l}</Text>)}
-            {client?.gstin ? <Text style={{ fontSize: 8, fontFamily: 'Helvetica-Bold', marginTop: 2 }}>GSTIN {client.gstin}</Text> : null}
+            {client?.gstin ? <Text style={{ fontSize: 8, fontFamily: PDF_SANS, fontWeight: 700, marginTop: 2 }}>GSTIN {client.gstin}</Text> : null}
           </View>
         </View>
 
@@ -144,7 +147,7 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
             <View key={i} style={[s.row, { borderBottomWidth: 0.5, borderBottomColor: '#E6E8EE' }]} wrap={false}>
               <Text style={[s.td, { width: '5%', color: MUTED }]}>{i + 1}</Text>
               <View style={[s.td, { width: wItem }]}>
-                <Text style={{ fontSize: 8.4, fontFamily: 'Helvetica-Bold' }}>{l.name}</Text>
+                <Text style={{ fontSize: 8.4, fontFamily: PDF_SANS, fontWeight: 700 }}>{l.name}</Text>
                 {l.description ? <Text style={{ fontSize: 7.6, color: MUTED, marginTop: 2, lineHeight: 1.45 }}>{l.description}</Text> : null}
                 {l.code ? <Text style={{ fontSize: 7, color: FAINT, marginTop: 2 }}>{l.code_type || 'SAC'}: {l.code}</Text> : null}
               </View>
@@ -172,7 +175,7 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
                   <Text style={{ fontSize: 6.8, color: FAINT, textAlign: 'right' }}>{l.gst_rate}%</Text>
                 </View>
               ) : null}
-              <Text style={[s.td, { width: '16%', textAlign: 'right', fontFamily: 'Helvetica-Bold' }]}>{num(l.taxable_value)}</Text>
+              <Text style={[s.td, { width: '16%', textAlign: 'right', fontFamily: PDF_SANS, fontWeight: 700 }]}>{num(l.taxable_value)}</Text>
             </View>
           ))}
         </View>
@@ -189,7 +192,7 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
           {Number(invoice.amount_paid) > 0.004 ? <T label="Payment Made" value={`(-) ${num(invoice.amount_paid)}`} color="#C0392B" /> : null}
           {!isQuote ? (
             <View style={[s.totalRow, { backgroundColor: '#EFF1F5', paddingVertical: 6 }]}>
-              <Text style={[s.totalLabel, { fontFamily: 'Helvetica-Bold', color: INK }]}>Balance Due</Text>
+              <Text style={[s.totalLabel, { fontFamily: PDF_SANS, fontWeight: 700, color: INK }]}>Balance Due</Text>
               <Text style={[s.totalValue, { fontSize: 10 }]}>{money(invoice.balance_due ?? invoice.total, cur)}</Text>
             </View>
           ) : null}
@@ -197,7 +200,7 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
 
         <Text style={{ marginTop: 12, fontSize: 8.4, textAlign: 'right' }}>
           <Text style={{ color: MUTED }}>Total In Words: </Text>
-          <Text style={{ fontFamily: 'Helvetica-BoldOblique' }}>{amountInWords(Number(invoice.total), cur)}</Text>
+          <Text style={{ fontFamily: PDF_SANS, fontWeight: 700 }}>{amountInWords(Number(invoice.total), cur)}</Text>
         </Text>
 
         {invoice.tds_applicable && Number(invoice.tds_amount) > 0 ? (
@@ -208,13 +211,13 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
         ) : null}
 
         {zero ? (
-          <Text style={{ marginTop: 12, fontSize: 8, fontFamily: 'Helvetica-Bold' }}>
+          <Text style={{ marginTop: 12, fontSize: 8, fontFamily: PDF_SANS, fontWeight: 700 }}>
             Supply meant for export of services without payment of Integrated Tax under Letter of Undertaking
             {invoice.lut_number ? ` (LUT ARN: ${invoice.lut_number})` : ''}.
           </Text>
         ) : null}
         {invoice.reverse_charge ? (
-          <Text style={{ marginTop: 6, fontSize: 8, fontFamily: 'Helvetica-Bold' }}>Tax payable on reverse charge basis.</Text>
+          <Text style={{ marginTop: 6, fontSize: 8, fontFamily: PDF_SANS, fontWeight: 700 }}>Tax payable on reverse charge basis.</Text>
         ) : null}
 
         {/* notes + signature */}
@@ -224,7 +227,7 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
             {invoice.notes ? <Text style={{ fontSize: 7.8, lineHeight: 1.6 }}>{invoice.notes}</Text> : null}
             {profile?.bank_account_no ? (
               <View style={{ marginTop: 8 }}>
-                <Text style={{ fontSize: 7.8, fontFamily: 'Helvetica-Bold', lineHeight: 1.7 }}>BILL TO -</Text>
+                <Text style={{ fontSize: 7.8, fontFamily: PDF_SANS, fontWeight: 700, lineHeight: 1.7 }}>BILL TO -</Text>
                 <Text style={{ fontSize: 7.8, lineHeight: 1.7 }}>Account Name: {profile.bank_account_name}</Text>
                 <Text style={{ fontSize: 7.8, lineHeight: 1.7 }}>Account No: {profile.bank_account_no}</Text>
                 {profile.bank_ifsc ? <Text style={{ fontSize: 7.8, lineHeight: 1.7 }}>IFSC: {profile.bank_ifsc}</Text> : null}
@@ -244,7 +247,7 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
           <View style={{ width: '36%', alignItems: 'flex-start' }}>
             {profile?.signature_url ? <Image src={profile.signature_url} style={{ height: 52, objectFit: 'contain' }} /> : <View style={{ height: 52 }} />}
             <View style={{ borderTopWidth: 0.5, borderTopColor: '#C9CEDA', paddingTop: 5, marginTop: 4, width: '100%' }}>
-              <Text style={{ fontSize: 8, fontFamily: 'Helvetica-Bold' }}>{profile?.signatory_name ?? profile?.contact_person ?? ''}</Text>
+              <Text style={{ fontSize: 8, fontFamily: PDF_SANS, fontWeight: 700 }}>{profile?.signatory_name ?? profile?.contact_person ?? ''}</Text>
               <Text style={{ fontSize: 7.4, color: FAINT }}>Authorized Signature</Text>
             </View>
           </View>

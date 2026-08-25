@@ -1,0 +1,3 @@
+Manrope — SIL Open Font License 1.1 — Mikhail Sharanda
+https://github.com/sharanda/manrope
+Static instances generated from the official variable font for PDF embedding.

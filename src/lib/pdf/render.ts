@@ -2,6 +2,7 @@ import { renderToBuffer } from '@react-pdf/renderer';
 import React from 'react';
 import { createAdminSupabase } from '../supabase/server';
 import type { Client, CompanyProfile, Invoice, InvoiceLine } from '../types';
+import { registerPdfFonts } from './fonts';
 import InvoicePdfDoc from './InvoicePdfDoc';
 
 export async function loadInvoiceBundle(id: string) {
@@ -20,6 +21,7 @@ export async function loadInvoiceBundle(id: string) {
 export async function renderInvoicePdf(id: string) {
   const bundle = await loadInvoiceBundle(id);
   if (!bundle) return null;
+  registerPdfFonts();
   const buffer = await renderToBuffer(
     React.createElement(InvoicePdfDoc, {
       invoice: bundle.invoice, lines: bundle.lines, client: bundle.client, profile: bundle.profile,
