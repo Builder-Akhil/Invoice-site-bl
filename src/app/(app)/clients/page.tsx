@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Search, Users, Pencil, FileText, Globe, Building2 } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
 import { useClients } from '@/lib/hooks';
+import { useListFilters } from '@/lib/list-filters';
 import { GST_TREATMENTS, type Client } from '@/lib/types';
 import { money, moneyShort, initials, downloadCSV } from '@/lib/format';
 import ClientForm from '@/components/ClientForm';
@@ -11,11 +12,22 @@ import { Card, EmptyState, Input, Loading, PageHeader, Tabs } from '@/components
 
 type Agg = Record<string, { billed: number; due: number; count: number }>;
 
+const CLIENT_FILTERS = { q: '', tab: 'active' };
+
 export default function ClientsPage() {
+  return (
+    <Suspense fallback={<Loading label="Loading clients" />}>
+      <ClientsInner />
+    </Suspense>
+  );
+}
+
+function ClientsInner() {
   const { clients, loading, reload } = useClients();
   const [agg, setAgg] = useState<Agg>({});
-  const [q, setQ] = useState('');
-  const [tab, setTab] = useState('active');
+  const { values: f, set } = useListFilters('clients', CLIENT_FILTERS);
+  const q = f.q;
+  const tab = f.tab;
   const [editing, setEditing] = useState<Client | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -68,9 +80,9 @@ export default function ClientsPage() {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative min-w-[220px] flex-1 max-w-sm">
           <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-chrome-dark" />
-          <Input className="pl-8" placeholder="Search name, email, GSTIN, city…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Input className="pl-8" placeholder="Search name, email, GSTIN, city…" value={q} onChange={(e) => set('q', e.target.value)} />
         </div>
-        <Tabs active={tab} onChange={setTab} tabs={[
+        <Tabs active={tab} onChange={(k) => set('tab', k)} tabs={[
           { key: 'active', label: 'Active', count: clients.filter((c) => c.status === 'active').length },
           { key: 'inactive', label: 'Inactive', count: clients.filter((c) => c.status !== 'active').length },
           { key: 'all', label: 'All', count: clients.length },

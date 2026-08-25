@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { FileText, Plus, Search, Download, Loader2 } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
 import { useClients } from '@/lib/hooks';
+import { useListFilters } from '@/lib/list-filters';
 import type { DocType, Invoice } from '@/lib/types';
 import { fmtDate, money, moneyShort, downloadCSV, todayISO } from '@/lib/format';
 import { netExpected } from '@/lib/payments';
@@ -11,16 +12,19 @@ import { setInvoicePaidStatus } from '@/lib/invoice-status';
 import { Card, EmptyState, Input, Loading, PageHeader, Select, StatusPill, Tabs, toast, useConfirm } from './ui';
 import RecordPaymentModal from './RecordPaymentModal';
 
+const LIST_FILTERS = { tab: 'all', q: '', client: '', from: '', to: '' };
+
 export default function DocumentList({ docType }: { docType: DocType }) {
   const { clients } = useClients();
   const { confirm, confirmNode } = useConfirm();
   const [rows, setRows] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('all');
-  const [q, setQ] = useState('');
-  const [clientId, setClientId] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const { values: f, set } = useListFilters(docType === 'quote' ? 'quotes' : 'invoices', LIST_FILTERS);
+  const tab = f.tab;
+  const q = f.q;
+  const clientId = f.client;
+  const from = f.from;
+  const to = f.to;
   const [settling, setSettling] = useState<string | null>(null);
   const [payFor, setPayFor] = useState<Invoice | null>(null);
 
@@ -112,18 +116,18 @@ export default function DocumentList({ docType }: { docType: DocType }) {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative min-w-[200px] flex-1 max-w-xs">
           <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-chrome-dark" />
-          <Input className="pl-8" placeholder="Number, subject or client…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Input className="pl-8" placeholder="Number, subject or client…" value={q} onChange={(e) => set('q', e.target.value)} />
         </div>
-        <Select className="max-w-[190px]" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+        <Select className="max-w-[190px]" value={clientId} onChange={(e) => set('client', e.target.value)}>
           <option value="">All clients</option>
           {clients.map((c) => <option key={c.id} value={c.id}>{c.company_name}</option>)}
         </Select>
-        <Input type="date" className="max-w-[150px]" value={from} onChange={(e) => setFrom(e.target.value)} title="From" />
-        <Input type="date" className="max-w-[150px]" value={to} onChange={(e) => setTo(e.target.value)} title="To" />
+        <Input type="date" className="max-w-[150px]" value={from} onChange={(e) => set('from', e.target.value)} title="From" />
+        <Input type="date" className="max-w-[150px]" value={to} onChange={(e) => set('to', e.target.value)} title="To" />
       </div>
 
       <div className="mb-4">
-        <Tabs active={tab} onChange={setTab} tabs={
+        <Tabs active={tab} onChange={(k) => set('tab', k)} tabs={
           docType === 'quote'
             ? [{ key: 'all', label: 'All', count: decorated.length },
                { key: 'draft', label: 'Draft', count: decorated.filter((r) => r.status === 'draft').length },

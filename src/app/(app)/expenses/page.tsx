@@ -1,16 +1,22 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { Plus, Receipt, Pencil, Trash2, Search, Download } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
 import { useClients } from '@/lib/hooks';
+import { useListFilters } from '@/lib/list-filters';
 import { EXPENSE_CATEGORIES, PAYMENT_MODES, type Expense } from '@/lib/types';
 import { GST_RATES } from '@/lib/gst';
 import { CURRENCIES, downloadCSV, financialYear, fmtDate, money, moneyShort, todayISO } from '@/lib/format';
+import { quoteInr, patchUnconvertedRates, rateLooksUnconverted } from '@/lib/fx';
+import { FxRateField } from '@/components/FxRateField';
 import {
   Card, EmptyState, Field, Input, Loading, Modal, PageHeader, Select, Textarea, Toggle, toast, useConfirm, Spinner,
 } from '@/components/ui';
 
 type Split = 'igst' | 'cgst_sgst' | 'none';
+
+const fy0 = financialYear();
+const EXPENSE_FILTERS = { q: '', from: fy0.start, to: fy0.end };
 
 const blank = (): Partial<Expense> & { split: Split } => ({
   expense_date: todayISO(), vendor_name: '', category: 'Software & Subscriptions',
@@ -19,6 +25,14 @@ const blank = (): Partial<Expense> & { split: Split } => ({
 });
 
 export default function ExpensesPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <ExpensesInner />
+    </Suspense>
+  );
+}
+
+function ExpensesInner() {
   const { clients } = useClients();
   const { confirm, confirmNode } = useConfirm();
   const [rows, setRows] = useState<Expense[]>([]);
@@ -26,15 +40,24 @@ export default function ExpensesPage() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [f, setF] = useState<Partial<Expense> & { split: Split }>(blank());
-  const [q, setQ] = useState('');
   const fy = financialYear();
-  const [from, setFrom] = useState(fy.start);
-  const [to, setTo] = useState(fy.end);
+  const { values: filt, set, patch } = useListFilters('expenses', EXPENSE_FILTERS);
+  const q = filt.q;
+  const from = filt.from;
+  const to = filt.to;
 
   const load = async () => {
     setLoading(true);
     const { data } = await sb().from('expenses').select('*').order('expense_date', { ascending: false });
-    setRows((data ?? []) as Expense[]); setLoading(false);
+    let list = (data ?? []) as Expense[];
+    try {
+      list = await patchUnconvertedRates(
+        list,
+        (r) => r.expense_date,
+        async (id, rate) => { await sb().from('expenses').update({ exchange_rate: rate }).eq('id', id); },
+      );
+    } catch { /* keep stored rates if FX is down */ }
+    setRows(list); setLoading(false);
   };
   useEffect(() => { load(); }, []);
 
@@ -73,8 +96,15 @@ export default function ExpensesPage() {
     setBusy(true);
     const { split, ...rest } = f;
     const c = computed(f);
+    const currency = rest.currency || 'INR';
+    let exchange_rate = currency === 'INR' ? 1 : Number(rest.exchange_rate ?? 1);
+    if (rateLooksUnconverted(currency, exchange_rate)) {
+      try { exchange_rate = (await quoteInr(currency, rest.expense_date)).rate; }
+      catch { /* keep typed rate */ }
+    }
     const payload = {
-      ...rest, gst_rate: split === 'none' ? 0 : rest.gst_rate,
+      ...rest, currency, exchange_rate,
+      gst_rate: split === 'none' ? 0 : rest.gst_rate,
       cgst_amount: c.cgst, sgst_amount: c.sgst, igst_amount: c.igst, total_amount: c.total,
     };
     const id = payload.id; delete payload.id;
@@ -142,11 +172,11 @@ export default function ExpensesPage() {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative min-w-[200px] flex-1 max-w-xs">
           <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-chrome-dark" />
-          <Input className="pl-8" placeholder="Vendor, category, bill…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Input className="pl-8" placeholder="Vendor, category, bill…" value={q} onChange={(e) => set('q', e.target.value)} />
         </div>
-        <Input type="date" className="max-w-[150px]" value={from} onChange={(e) => setFrom(e.target.value)} />
-        <Input type="date" className="max-w-[150px]" value={to} onChange={(e) => setTo(e.target.value)} />
-        <button className="btn-subtle btn-sm" onClick={() => { setFrom(fy.start); setTo(fy.end); }}>{fy.label}</button>
+        <Input type="date" className="max-w-[150px]" value={from} onChange={(e) => set('from', e.target.value)} />
+        <Input type="date" className="max-w-[150px]" value={to} onChange={(e) => set('to', e.target.value)} />
+        <button className="btn-subtle btn-sm" onClick={() => patch({ from: fy.start, to: fy.end })}>{fy.label}</button>
       </div>
 
       <Card bodyClass="">
@@ -176,7 +206,14 @@ export default function ExpensesPage() {
                       <td className="td text-right font-mono tabular-nums text-[12.5px] text-chrome">
                         {money(Number(r.cgst_amount) + Number(r.sgst_amount) + Number(r.igst_amount), r.currency)}
                       </td>
-                      <td className="td text-right font-mono tabular-nums text-[13px] text-white">{money(r.total_amount, r.currency)}</td>
+                      <td className="td text-right font-mono tabular-nums text-[13px] text-white">
+                        <span className="block">{money(r.total_amount, r.currency)}</span>
+                        {r.currency !== 'INR' && (
+                          <span className="block text-[10.5px] font-normal text-amber-300/90">
+                            ≈ {money(inr(r, Number(r.total_amount)))} · ×{Number(r.exchange_rate).toFixed(2)}
+                          </span>
+                        )}
+                      </td>
                       <td className="td">
                         <span className={`pill ${r.itc_eligible ? 'bg-emerald-500/15 text-emerald-300' : 'bg-ink-400 text-chrome-dark'}`}>
                           {r.itc_eligible ? 'Claimable' : 'Blocked'}
@@ -232,15 +269,20 @@ export default function ExpensesPage() {
             </Select>
           </Field>
           <Field label="Currency">
-            <Select value={f.currency ?? 'INR'} onChange={(e) => setF({ ...f, currency: e.target.value })}>
+            <Select value={f.currency ?? 'INR'} onChange={(e) => {
+              const currency = e.target.value;
+              setF((prev) => ({ ...prev, currency, exchange_rate: currency === 'INR' ? 1 : prev.exchange_rate }));
+            }}>
               {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
             </Select>
           </Field>
-          {f.currency !== 'INR' && (
-            <Field label="Exchange rate to INR">
-              <Input type="number" step="0.0001" className="input-mono" value={f.exchange_rate ?? 1} onChange={(e) => setF({ ...f, exchange_rate: Number(e.target.value) })} />
-            </Field>
-          )}
+          <FxRateField
+            currency={f.currency}
+            onDate={f.expense_date}
+            amount={Number(f.taxable_amount) || 0}
+            rate={Number(f.exchange_rate) || 1}
+            onRate={(n) => setF((prev) => ({ ...prev, exchange_rate: n }))}
+          />
           <Field label="Payment mode">
             <Select value={f.payment_mode ?? 'bank_transfer'} onChange={(e) => setF({ ...f, payment_mode: e.target.value })}>
               {PAYMENT_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
@@ -265,6 +307,9 @@ export default function ExpensesPage() {
             </div>
             <p className="font-mono text-[13px] text-white">
               Total {money(calc.total, f.currency)}
+              {f.currency !== 'INR' && Number(f.exchange_rate) > 1 && (
+                <span className="ml-2 text-amber-300">≈ {money(calc.total * Number(f.exchange_rate))}</span>
+              )}
               <span className="ml-2 text-[11.5px] text-chrome-dark">
                 {f.split === 'igst' ? `IGST ${calc.igst}` : f.split === 'cgst_sgst' ? `CGST ${calc.cgst} + SGST ${calc.sgst}` : 'no GST'}
               </span>

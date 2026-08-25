@@ -1,0 +1,17 @@
+---
+description: After a green typecheck and build, commit and push without asking.
+alwaysApply: true
+---
+
+# Ship after green
+
+This user does not want to be asked to commit or push.
+
+After the work is done:
+
+1. Run `npx tsc --noEmit` and `npm run build`.
+2. If either fails, fix it and re-run both. Do not commit.
+3. If both pass and there are real changes, commit (HEREDOC, skip `.env`/secrets) and `git push -u origin HEAD`.
+4. Do not ask. Do not wait. Say the commit hash when done.
+
+A Cursor stop hook will nudge you if you finish with a green build and a dirty tree. Obey it.

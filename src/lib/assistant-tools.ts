@@ -5,6 +5,7 @@ import { generateExpenseFromRecurring, generateFromProfile } from './recurring';
 import { setInvoicePaidStatus } from './invoice-status';
 import { computeTotals, stateCodeFromGstin, stateNameByCode } from './gst';
 import { splitExpenseTax } from './finance';
+import { fetchInrRate } from './fx';
 import {
   applyPayrollEdits, asComponents, asPayrollLines, computeLines, defaultPayComponents,
   previousPeriod, salaryExpensePayload, snapshotPayroll,
@@ -88,7 +89,7 @@ export const assistantTools: Anthropic.Tool[] = [
         vendor_gstin: { type: 'string' },
         bill_number: { type: 'string' },
         itc_eligible: { type: 'boolean' },
-        currency: { type: 'string' },
+        currency: { type: 'string', description: 'USD, EUR, etc. INR amount is converted at the closest rate on expense_date — never copy the dollar figure 1:1 into rupees.' },
         payment_mode: {
           type: 'string',
           enum: ['bank_transfer', 'upi', 'wire', 'cheque', 'card', 'cash', 'reimbursement', 'other'],
@@ -304,7 +305,7 @@ export const assistantTools: Anthropic.Tool[] = [
         itc_eligible: { type: 'boolean' },
         next_run_date: { type: 'string' },
         day_of_month: { type: 'number' },
-        currency: { type: 'string' },
+        currency: { type: 'string', description: 'USD/EUR/etc. Store the foreign amount; the portal converts to INR as of next_run_date. Do not invent a 1:1 rupee copy.' },
         notes: { type: 'string' },
       },
       required: ['title', 'taxable_amount'],
@@ -435,9 +436,11 @@ export async function executeAssistantTool(
     const half = split === 'cgst_sgst' ? +(taxable * rate / 200).toFixed(2) : 0;
     const total = +(taxable + igst + half * 2).toFixed(2);
     const currency = String(input.currency || 'INR');
+    const expenseDate = String(input.expense_date || today);
+    const fx = await fetchInrRate(currency, expenseDate);
     const { data, error } = await supabase.from('expenses').insert({
       vendor_name: input.vendor_name,
-      expense_date: input.expense_date || today,
+      expense_date: expenseDate,
       category: input.category || 'Software & Subscriptions',
       description: input.description ?? null,
       vendor_gstin: input.vendor_gstin ?? null,
@@ -450,9 +453,10 @@ export async function executeAssistantTool(
       total_amount: total,
       itc_eligible: input.itc_eligible ?? split !== 'none',
       currency,
+      exchange_rate: fx.rate,
       payment_mode: input.payment_mode || 'bank_transfer',
       paid_by: input.paid_by ?? (input.payment_mode === 'reimbursement' ? actor ?? null : null),
-    }).select('id, vendor_name, total_amount, currency').single();
+    }).select('id, vendor_name, total_amount, currency, exchange_rate').single();
     if (error) throw error;
     return {
       result: data,
@@ -461,8 +465,8 @@ export async function executeAssistantTool(
         id: data.id,
         href: '/expenses',
         title: data.vendor_name,
-        subtitle: 'Expense logged',
-        amount: money(Number(data.total_amount), data.currency),
+        subtitle: currency === 'INR' ? 'Expense logged' : `Expense logged · ${currency}→INR ${fx.rate} as of ${fx.asOf}`,
+        amount: money(Number(data.total_amount) * Number(data.exchange_rate || 1)),
       },
     };
   }
@@ -710,6 +714,8 @@ export async function executeAssistantTool(
     const tax = splitExpenseTax(taxable, Number(input.gst_rate ?? 18), split);
     const vendor = String(input.vendor ?? input.title);
     const start = String(input.next_run_date || today);
+    const currency = String(input.currency || 'INR');
+    const fx = await fetchInrRate(currency, start);
     const { data, error } = await supabase.from('recurring_expenses').insert({
       title: input.title,
       vendor,
@@ -721,17 +727,19 @@ export async function executeAssistantTool(
       gst_rate: tax.gst_rate,
       tax_split: split,
       itc_eligible: input.itc_eligible ?? split !== 'none',
-      currency: input.currency || 'INR',
+      currency,
+      exchange_rate: fx.rate,
       notes: input.notes ?? null,
       is_active: true,
-    }).select('id, title, vendor, next_run_date, taxable_amount, frequency').single();
+    }).select('id, title, vendor, next_run_date, taxable_amount, frequency, currency, exchange_rate').single();
     if (error) throw error;
+    const inr = Number(data.taxable_amount) * Number(data.exchange_rate || 1);
     return {
       result: data,
       created: {
         kind: 'subscription', id: data.id, href: '/recurring-expenses', title: data.title,
-        subtitle: `${data.frequency} · next ${data.next_run_date}`,
-        amount: money(Number(data.taxable_amount)),
+        subtitle: `${data.frequency} · next ${data.next_run_date}${currency === 'INR' ? '' : ` · ${currency}→INR ${fx.rate}`}`,
+        amount: money(inr),
       },
     };
   }

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeTotals, resolveTaxMode, supplierState } from './gst';
 import { defaultPlaceOfSupply } from './gst';
 import { splitExpenseTax } from './finance';
+import { fetchInrRate } from './fx';
 import type { Client, CompanyProfile, InvoiceLine, RecurringExpense, RecurringProfile } from './types';
 
 export function advance(dateISO: string, frequency: string, dayOfMonth?: number | null) {
@@ -107,6 +108,11 @@ export async function generateExpenseFromRecurring(
 ) {
   const expense_date = onDate ?? rec.next_run_date;
   const tax = splitExpenseTax(Number(rec.taxable_amount), Number(rec.gst_rate), rec.tax_split ?? 'igst');
+  const currency = rec.currency ?? 'INR';
+  const quote = await fetchInrRate(currency, expense_date);
+  const fxNote = currency === 'INR'
+    ? `Recurring spend: ${rec.title}`
+    : `Recurring spend: ${rec.title} · ${currency}→INR ${quote.rate} as of ${quote.asOf}`;
   const { data, error } = await admin.from('expenses').insert({
     expense_date,
     vendor_name: rec.vendor,
@@ -115,22 +121,22 @@ export async function generateExpenseFromRecurring(
     taxable_amount: rec.taxable_amount,
     ...tax,
     itc_eligible: rec.itc_eligible,
-    currency: rec.currency ?? 'INR',
-    exchange_rate: rec.exchange_rate ?? 1,
+    currency,
+    exchange_rate: quote.rate,
     payment_mode: 'card',
     reference: rec.id,
-    notes: `Recurring spend: ${rec.title}`,
+    notes: rec.notes ? `${rec.notes}\n${fxNote}` : fxNote,
   }).select('id, vendor_name, total_amount, currency').single();
   if (error) throw error;
 
   const next = advance(expense_date, rec.frequency, rec.day_of_month);
   await admin.from('recurring_expenses').update({
-    next_run_date: next, last_run_at: new Date().toISOString(),
+    next_run_date: next, last_run_at: new Date().toISOString(), exchange_rate: quote.rate,
   }).eq('id', rec.id);
 
   await admin.from('activity_log').insert({
     entity: 'expense', entity_id: data.id, action: 'recurring_expense_generated',
-    detail: `${rec.title} → ${expense_date}`, actor: 'system',
+    detail: `${rec.title} → ${expense_date} @ ${currency} ${quote.rate} INR`, actor: 'system',
   });
 
   return data as { id: string; vendor_name: string; total_amount: number; currency: string };

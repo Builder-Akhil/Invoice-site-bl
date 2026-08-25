@@ -12,4 +12,9 @@ out
 Contacts.csv
 Invoice.csv
 
-.cursor
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
+!.cursor/hooks.json
+!.cursor/hooks/
+!.cursor/hooks/**

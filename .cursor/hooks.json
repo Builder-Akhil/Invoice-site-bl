@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterShellExecution": [
+      {
+        "command": ".cursor/hooks/record-green.py",
+        "matcher": "tsc --noEmit|npm run build|next build"
+      }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/ship-after-green-stop.py",
+        "loop_limit": 1
+      }
+    ]
+  }
+}

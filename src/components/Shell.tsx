@@ -7,6 +7,7 @@ import {
   Settings, LogOut, FileSignature, Menu, X, MessageSquare, UsersRound, CreditCard,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
+import { useFilterNav } from '@/lib/list-filters';
 import { Wordmark } from './Logo';
 import { ToastHost } from './ui';
 import ChatBar from './ChatBar';
@@ -30,6 +31,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [open, setOpen] = useState(false);
+  const navHref = useFilterNav();
 
   useEffect(() => {
     sb().auth.getUser().then(({ data }) => setEmail(data.user?.email ?? ''));
@@ -59,7 +61,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4">
             <p className="label-mono px-3 pb-1.5 pt-2">Workspace</p>
             {NAV.map((n) => (
-              <Link key={n.href} href={n.href}
+              <Link key={n.href} href={navHref[n.href] ?? n.href}
                 className={`nav-item ${isActive(n.href) ? 'nav-item-active' : ''}`}>
                 <n.icon size={16} strokeWidth={1.6} /> {n.label}
               </Link>

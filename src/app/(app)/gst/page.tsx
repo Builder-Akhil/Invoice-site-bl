@@ -1,8 +1,9 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { Landmark, Plus, Trash2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
 import { useClients, useProfile } from '@/lib/hooks';
+import { useListFilters } from '@/lib/list-filters';
 import type { Expense, GstPayment, Invoice, Payment } from '@/lib/types';
 import { downloadCSV, financialYear, fmtDate, money, moneyShort, todayISO } from '@/lib/format';
 import {
@@ -18,7 +19,21 @@ const blankPayment = (period: string): Partial<GstPayment> => ({
   igst_paid: 0, cgst_paid: 0, sgst_paid: 0, interest: 0, late_fee: 0, itc_utilised: 0, status: 'paid',
 });
 
+const GST_FILTERS = {
+  cadence: 'monthly',
+  fy: financialYear().start,
+  month: todayISO().slice(0, 7),
+};
+
 export default function GstPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <GstInner />
+    </Suspense>
+  );
+}
+
+function GstInner() {
   const { clients } = useClients();
   const { profile } = useProfile();
   const { confirm, confirmNode } = useConfirm();
@@ -27,9 +42,10 @@ export default function GstPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [gstPayments, setGstPayments] = useState<GstPayment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [periodType, setPeriodType] = useState<PeriodType>('monthly');
-  const [fyStart, setFyStart] = useState(financialYear().start);
-  const [selectedKey, setSelectedKey] = useState(todayISO().slice(0, 7));
+  const { values: filt, set } = useListFilters('gst', GST_FILTERS);
+  const periodType = (filt.cadence === 'quarterly' ? 'quarterly' : 'monthly') as PeriodType;
+  const fyStart = filt.fy;
+  const selectedKey = filt.month;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [p, setP] = useState<Partial<GstPayment>>(blankPayment(todayISO().slice(0, 7)));
@@ -71,8 +87,8 @@ export default function GstPage() {
     if (!packs.length) return;
     if (packs.some((b) => b.key === selectedKey)) return;
     const withShare = [...packs].reverse().find((b) => b.share.length || b.zeroRated.length);
-    setSelectedKey(withShare?.key ?? packs[packs.length - 1].key);
-  }, [packs, selectedKey, periodType, fyStart]);
+    set('month', withShare?.key ?? packs[packs.length - 1].key);
+  }, [packs, selectedKey, periodType, fyStart, set]);
 
   const pack = packs.find((b) => b.key === selectedKey) ?? packs[packs.length - 1] ?? null;
 
@@ -134,7 +150,7 @@ export default function GstPage() {
       <PageHeader
         title="GST & Tax"
         subtitle="Monthly pack for the GST team. Government GST is only on payments received, paid from the LLP account.">
-        <Select className="max-w-[150px]" value={fyStart} onChange={(e) => setFyStart(e.target.value)}>
+        <Select className="max-w-[150px]" value={fyStart} onChange={(e) => set('fy', e.target.value)}>
           {fyOptions.map((o) => <option key={o.start} value={o.start}>{o.label}</option>)}
         </Select>
         <button className="btn-primary" onClick={() => openRecord()}>
@@ -162,7 +178,7 @@ export default function GstPage() {
       </p>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <Tabs active={periodType} onChange={(k) => setPeriodType(k as PeriodType)}
+        <Tabs active={periodType} onChange={(k) => set('cadence', k)}
           tabs={[{ key: 'monthly', label: 'Monthly (GSTR-3B)' }, { key: 'quarterly', label: 'Quarterly (QRMP)' }]} />
       </div>
 
@@ -191,7 +207,7 @@ export default function GstPage() {
                     const active = b.key === selectedKey;
                     return (
                       <tr key={b.key} className={`row-link ${active ? 'bg-blue/10' : ''}`}
-                        onClick={() => setSelectedKey(b.key)}>
+                        onClick={() => set('month', b.key)}>
                         <td className="td">
                           <span className="font-semibold text-white">{b.label}</span>
                           <span className="ml-2 font-mono text-[11px] text-chrome-dark">{b.key}</span>

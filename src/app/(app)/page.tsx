@@ -13,6 +13,7 @@ import {
   booksSnapshot, fxInr, gstDueByMonth, lastNMonthKeys,
 } from '@/lib/finance';
 import { financialYear, fmtDate, fmtDateLong, money, moneyShort, monthLabel, todayISO } from '@/lib/format';
+import { useFilterNav } from '@/lib/list-filters';
 import { Card, Loading, PageHeader, StatusPill } from '@/components/ui';
 
 const MRR_FACTOR: Record<string, number> = { monthly: 1, quarterly: 1 / 3, yearly: 1 / 12, weekly: 52 / 12 };
@@ -20,6 +21,7 @@ const MRR_FACTOR: Record<string, number> = { monthly: 1, quarterly: 1 / 3, yearl
 export default function Dashboard() {
   const { profile } = useProfile();
   const { clients } = useClients();
+  const lists = useFilterNav();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -146,7 +148,7 @@ export default function Dashboard() {
       </div>
 
       {overdue > 0 && (
-        <Link href="/invoices" className="mb-5 flex items-center gap-3 rounded-xl border border-red-900/50 bg-red-950/30 px-4 py-3 text-[13px] text-red-200 transition hover:border-red-800">
+        <Link href="/invoices?tab=overdue" className="mb-5 flex items-center gap-3 rounded-xl border border-red-900/50 bg-red-950/30 px-4 py-3 text-[13px] text-red-200 transition hover:border-red-800">
           <AlertTriangle size={16} className="shrink-0" />
           <span><strong>{money(overdue)}</strong> is overdue across {overdueList.length} invoice{overdueList.length > 1 ? 's' : ''}.</span>
           <ArrowUpRight size={15} className="ml-auto shrink-0" />
@@ -190,7 +192,7 @@ export default function Dashboard() {
           </Card>
 
           <Card title="Recent invoices" bodyClass=""
-            action={<Link href="/invoices" className="btn-subtle btn-xs">View all <ArrowUpRight size={13} /></Link>}>
+            action={<Link href={lists['/invoices'] ?? '/invoices'} className="btn-subtle btn-xs">View all <ArrowUpRight size={13} /></Link>}>
             {invoices.length === 0 ? (
               <p className="px-5 py-6 text-[13px] text-chrome">No invoices yet — raise your first one, or ask the assistant below.</p>
             ) : (
@@ -240,8 +242,8 @@ export default function Dashboard() {
               {books.runway.recipe.gstAvg ? ` ${moneyShort(books.runway.recipe.gstAvg)}` : ''}).
             </p>
             <div className="mt-4 grid grid-cols-2 gap-2 border-t border-line pt-3">
-              <Link href="/expenses" className="btn-ghost btn-sm"><Receipt size={14} /> Expenses</Link>
-              <Link href="/gst" className="btn-ghost btn-sm"><Landmark size={14} /> GST</Link>
+              <Link href={lists['/expenses'] ?? '/expenses'} className="btn-ghost btn-sm"><Receipt size={14} /> Expenses</Link>
+              <Link href={lists['/gst'] ?? '/gst'} className="btn-ghost btn-sm"><Landmark size={14} /> GST</Link>
             </div>
           </Card>
 
@@ -286,9 +288,9 @@ export default function Dashboard() {
           <Card title="Quick actions">
             <div className="grid gap-2">
               <Link href="/invoices/new" className="btn-ghost w-full justify-start"><Plus size={14} /> Raise an invoice</Link>
-              <Link href="/team" className="btn-ghost w-full justify-start"><UsersRound size={14} /> Team payroll</Link>
+              <Link href={lists['/team'] ?? '/team'} className="btn-ghost w-full justify-start"><UsersRound size={14} /> Team payroll</Link>
               <Link href="/recurring-expenses" className="btn-ghost w-full justify-start"><CreditCard size={14} /> Subscriptions</Link>
-              <Link href="/expenses" className="btn-ghost w-full justify-start"><Wallet size={14} /> Log an expense</Link>
+              <Link href={lists['/expenses'] ?? '/expenses'} className="btn-ghost w-full justify-start"><Wallet size={14} /> Log an expense</Link>
               <Link href="/recurring" className="btn-ghost w-full justify-start"><Repeat size={14} /> Manage retainers</Link>
             </div>
           </Card>

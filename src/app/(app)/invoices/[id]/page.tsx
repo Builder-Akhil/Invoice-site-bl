@@ -2,12 +2,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import {
-  Pencil, Send, Printer, Download, Link2, Copy, Trash2, CheckCircle2,
+import { ArrowLeft, Pencil, Send, Printer, Download, Link2, Copy, Trash2, CheckCircle2,
   Ban, ArrowRightLeft, IndianRupee, Clock, Mail,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
 import { useProfile } from '@/lib/hooks';
+import { useFilterNav } from '@/lib/list-filters';
 import { consumeNumber, loadInvoice, logActivity } from '@/lib/invoice-service';
 import { setInvoicePaidStatus } from '@/lib/invoice-status';
 import type { Invoice, Payment } from '@/lib/types';
@@ -23,6 +23,7 @@ import {
 export default function InvoiceDetail({ params }: { params: { id: string } }) {
   const router = useRouter();
   const { profile } = useProfile();
+  const lists = useFilterNav();
   const { confirm, confirmNode } = useConfirm();
   const [inv, setInv] = useState<Invoice | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -146,6 +147,11 @@ export default function InvoiceDetail({ params }: { params: { id: string } }) {
       {/* ------------------------------ action bar ------------------------------ */}
       <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
+          <Link
+            href={lists[isQuote ? '/quotes' : '/invoices'] ?? (isQuote ? '/quotes' : '/invoices')}
+            className="mb-2 inline-flex items-center gap-1.5 text-[12.5px] text-chrome hover:text-white">
+            <ArrowLeft size={14} /> {isQuote ? 'Quotes' : 'Invoices'}
+          </Link>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="font-display text-[32px] leading-none text-white">{inv.invoice_number}</h1>
             <StatusPill status={inv.status} />

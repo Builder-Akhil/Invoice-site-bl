@@ -1,8 +1,9 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { Plus, Package, Pencil, Trash2, Search } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
 import { useItems } from '@/lib/hooks';
+import { useListFilters } from '@/lib/list-filters';
 import { UNITS, type CatalogItem } from '@/lib/types';
 import { GST_RATES } from '@/lib/gst';
 import { money } from '@/lib/format';
@@ -13,10 +14,21 @@ const blank = (): Partial<CatalogItem> => ({
   unit: 'qty', rate: 0, currency: 'INR', gst_rate: 18, is_active: true,
 });
 
+const ITEM_FILTERS = { q: '' };
+
 export default function ItemsPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <ItemsInner />
+    </Suspense>
+  );
+}
+
+function ItemsInner() {
   const { items, loading, reload } = useItems();
   const { confirm, confirmNode } = useConfirm();
-  const [q, setQ] = useState('');
+  const { values: filt, set: setFilter } = useListFilters('items', ITEM_FILTERS);
+  const q = filt.q;
   const [open, setOpen] = useState(false);
   const [f, setF] = useState<Partial<CatalogItem>>(blank());
 
@@ -52,7 +64,7 @@ export default function ItemsPage() {
 
       <div className="relative mb-4 max-w-sm">
         <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-chrome-dark" />
-        <Input className="pl-8" placeholder="Search services or codes…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input className="pl-8" placeholder="Search services or codes…" value={q} onChange={(e) => setFilter('q', e.target.value)} />
       </div>
 
       <Card bodyClass="">

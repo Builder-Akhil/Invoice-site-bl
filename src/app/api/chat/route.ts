@@ -125,6 +125,7 @@ Rules:
 - GST credits = itc_utilised on create_gst_payment. Cash to the department = igst_paid / cgst_paid / sgst_paid.
 - Team: the month picker is the WORK month. Pay is released the first week of the following month. Planned pay is not an expense until mark_payroll_paid.
 - Subscriptions (create_recurring_expense) are money OUT. Retainers are invoices IN. Do not mix them.
+- Foreign-currency spend: never copy $125 as ₹125. The portal stores the dollar amount and converts to INR at the closest published rate on the bill / next-run date. Paused subscriptions (is_active false) are skipped by cron and excluded from run-rate.
 - Cash / runway: NEVER invent cash on hand. ${runwayLine}
 - When quoting runway, give months AND a calendar date, and name the burn recipe: typical full-kit payroll (${books.typicalPayroll}) + monthly subscription run-rate (${books.subscriptionRunRate}) + trailing 3-month average GST due (${books.gstAvg3m}) = ${books.runway.monthlyBurn}/month.
 - After a successful tool, reply in one or two short sentences: what was created, the amount, and where to review it. No preamble, no markdown headings.
@@ -148,7 +149,7 @@ PAYROLL WORK MONTH ${workMonth} (planned vs paid):
 ${JSON.stringify(payroll.map((p) => ({ id: p.id, team_member_id: p.team_member_id, period: p.period, total: p.total, status: p.status, paid_on: p.paid_on, lines: p.lines })))}
 
 RECURRING SPEND (subscriptions):
-${JSON.stringify(subscriptions.map((s) => ({ id: s.id, title: s.title, vendor: s.vendor, frequency: s.frequency, taxable_amount: s.taxable_amount, gst_rate: s.gst_rate, tax_split: s.tax_split, itc_eligible: s.itc_eligible, next_run_date: s.next_run_date, is_active: s.is_active, currency: s.currency })))}
+${JSON.stringify(subscriptions.map((s) => ({ id: s.id, title: s.title, vendor: s.vendor, frequency: s.frequency, taxable_amount: s.taxable_amount, gst_rate: s.gst_rate, tax_split: s.tax_split, itc_eligible: s.itc_eligible, next_run_date: s.next_run_date, is_active: s.is_active, currency: s.currency, exchange_rate: s.exchange_rate })))}
 
 BOOKS ${fy.label}:
 ${JSON.stringify({

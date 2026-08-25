@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { Plus, UsersRound, Pencil, Trash2, Banknote, RefreshCw, PauseCircle, PlayCircle } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
 import {
@@ -9,6 +9,7 @@ import {
 } from '@/lib/payroll';
 import { CURRENCIES, money, moneyShort, todayISO } from '@/lib/format';
 import type { PayComponent, PayrollItem, PayrollLine, TeamMember } from '@/lib/types';
+import { useListFilters } from '@/lib/list-filters';
 import {
   Card, EmptyState, Field, Input, Loading, Modal, PageHeader, Select, Textarea, Toggle,
   toast, useConfirm, Spinner,
@@ -19,12 +20,23 @@ const blankMember = (): Partial<TeamMember> & { components: PayComponent[] } => 
   currency: 'INR', exchange_rate: 1, notes: '', components: defaultPayComponents(),
 });
 
+const TEAM_FILTERS = { period: previousPeriod() };
+
 export default function TeamPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <TeamInner />
+    </Suspense>
+  );
+}
+
+function TeamInner() {
   const { confirm, confirmNode } = useConfirm();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [payroll, setPayroll] = useState<PayrollItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState(previousPeriod());
+  const { values: filt, set } = useListFilters('team', TEAM_FILTERS);
+  const period = filt.period || previousPeriod();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState('');
   const [f, setF] = useState(blankMember());
@@ -183,7 +195,7 @@ export default function TeamPage() {
 
       <div className="mb-5 flex flex-wrap items-end gap-3">
         <Field label="Work month">
-          <Input type="month" className="max-w-[180px]" value={period} onChange={(e) => setPeriod(e.target.value)} />
+          <Input type="month" className="max-w-[180px]" value={period} onChange={(e) => set('period', e.target.value)} />
         </Field>
         <p className="pb-2 text-[12.5px] text-chrome">
           Planned pay does not hit expenses until you mark paid — like a flight plan that is not fuel burn until takeoff.
