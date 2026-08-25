@@ -86,7 +86,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <button className="btn-ghost btn-sm" onClick={() => setOpen(true)}><Menu size={16} /></button>
           <Wordmark compact />
         </div>
-        <main className={`mx-auto w-full max-w-[1240px] px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8 ${hideChat ? 'pb-8' : 'pb-40'}`}>
+        <main className={`mx-auto w-full max-w-[1240px] px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8 ${hideChat ? 'pb-8' : 'pb-24'}`}>
           {children}
         </main>
       </div>

@@ -143,18 +143,25 @@ export function dictationSupported() {
   return !!getSpeechRecognition();
 }
 
+function joinSpeech(...parts: string[]) {
+  return parts.filter((s) => s.trim()).join(' ').replace(/\s+/g, ' ').trim();
+}
+
 /** Speak, pause or walk away — the transcript lands in the composer, it does not send. */
 export function useDictation(onCommit: (text: string) => void) {
   const [listening, setListening] = useState(false);
   const [interim, setInterim] = useState('');
+  const [draft, setDraft] = useState('');
   const recRef = useRef<Recog | null>(null);
   const finalRef = useRef('');
   const interimRef = useRef('');
+  const skipCommitRef = useRef(false);
   const silenceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onCommitRef = useRef(onCommit);
   useEffect(() => { onCommitRef.current = onCommit; }, [onCommit]);
 
-  const stop = useCallback(() => {
+  const stop = useCallback((opts?: { commit?: boolean }) => {
+    skipCommitRef.current = opts?.commit === false;
     if (silenceRef.current) clearTimeout(silenceRef.current);
     recRef.current?.stop();
   }, []);
@@ -162,6 +169,7 @@ export function useDictation(onCommit: (text: string) => void) {
   const start = useCallback(() => {
     const Ctor = getSpeechRecognition();
     if (!Ctor) return false;
+    skipCommitRef.current = false;
     recRef.current?.abort();
     finalRef.current = '';
     interimRef.current = '';
@@ -177,9 +185,10 @@ export function useDictation(onCommit: (text: string) => void) {
         if (e.results[i].isFinal) nextFinal += t;
         else nextInterim += t;
       }
-      if (nextFinal) finalRef.current = `${finalRef.current} ${nextFinal}`.replace(/\s+/g, ' ').trim();
+      if (nextFinal) finalRef.current = joinSpeech(finalRef.current, nextFinal);
       interimRef.current = nextInterim;
       setInterim(nextInterim);
+      setDraft(joinSpeech(finalRef.current, nextInterim));
       if (silenceRef.current) clearTimeout(silenceRef.current);
       silenceRef.current = setTimeout(() => rec.stop(), 1400);
     };
@@ -196,18 +205,22 @@ export function useDictation(onCommit: (text: string) => void) {
     };
     rec.onend = () => {
       if (silenceRef.current) clearTimeout(silenceRef.current);
-      const text = `${finalRef.current} ${interimRef.current}`.replace(/\s+/g, ' ').trim();
+      const text = joinSpeech(finalRef.current, interimRef.current);
+      const skip = skipCommitRef.current;
+      skipCommitRef.current = false;
       finalRef.current = '';
       interimRef.current = '';
       setInterim('');
+      setDraft('');
       setListening(false);
       recRef.current = null;
-      if (text) onCommitRef.current(text);
+      if (text && !skip) onCommitRef.current(text);
     };
     recRef.current = rec;
     rec.start();
     setListening(true);
     setInterim('');
+    setDraft('');
     return true;
   }, []);
 
@@ -219,8 +232,9 @@ export function useDictation(onCommit: (text: string) => void) {
 
   useEffect(() => () => {
     if (silenceRef.current) clearTimeout(silenceRef.current);
+    skipCommitRef.current = true;
     recRef.current?.abort();
   }, []);
 
-  return { listening, interim, toggle, stop, supported: dictationSupported() };
+  return { listening, interim, draft, toggle, stop, supported: dictationSupported() };
 }

@@ -8,7 +8,7 @@ import { dbMessagesToChat, sendChat } from '@/lib/chat';
 import { fmtDate } from '@/lib/format';
 import type { ChatAttachment, ChatMsg, Conversation, ConversationMessage } from '@/lib/types';
 import { EmptyState, Loading, toast, useConfirm } from '@/components/ui';
-import { ChatBubbles, ChatComposer } from './chat-ui';
+import { ChatBubbles, ChatComposer, type ChatLive } from './chat-ui';
 
 const SUGGESTIONS = [
   'Invoice AAFM India 2.5L for Consulting CTO, Aug 15 – Sept 15',
@@ -25,6 +25,7 @@ export default function ChatWorkspace({ conversationId }: { conversationId?: str
   const [busy, setBusy] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
   const [loadingThread, setLoadingThread] = useState(!!conversationId);
+  const [live, setLive] = useState<ChatLive | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
   const loadList = useCallback(async () => {
@@ -50,7 +51,7 @@ export default function ChatWorkspace({ conversationId }: { conversationId?: str
     if (conversationId) loadThread(conversationId);
     else setMsgs([]);
   }, [conversationId, loadThread]);
-  useEffect(() => { boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight }); }, [msgs, busy]);
+  useEffect(() => { boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight }); }, [msgs, busy, live]);
 
   async function send(text: string, images: ChatAttachment[] = []) {
     const content = text.trim();
@@ -116,9 +117,9 @@ export default function ChatWorkspace({ conversationId }: { conversationId?: str
           <p className="truncate text-[13.5px] font-semibold text-white">{active?.title ?? 'New chat'}</p>
         </header>
 
-        <div ref={boxRef} className="flex-1 space-y-3 overflow-y-auto px-5 py-5">
+        <div ref={boxRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-5">
           {loadingThread ? <Loading label="Opening chat" />
-            : msgs.length === 0 ? (
+            : msgs.length === 0 && !live ? (
               <EmptyState icon={<MessageSquare size={18} />} title="Talk, type, or attach a screenshot"
                 body="Invoices, quotes, clients, expenses, GST payments or credits, retainers. Type it, drop a screenshot, or tap the mic — when you pause, the words fill the box. You send when you are ready."
                 action={
@@ -131,16 +132,17 @@ export default function ChatWorkspace({ conversationId }: { conversationId?: str
                     ))}
                   </div>
                 } />
-            ) : <ChatBubbles msgs={msgs} busy={busy} />}
+            ) : <ChatBubbles msgs={msgs} busy={busy} live={live} />}
         </div>
 
-        <div className="border-t border-line px-4 py-3">
+        <div className="shrink-0 border-t border-line px-4 py-3">
           <ChatComposer
             input={input}
             setInput={setInput}
             onSend={send}
             busy={busy}
             autoFocus
+            onLiveChange={setLive}
             placeholder="Describe an invoice, attach a screenshot, or talk…"
           />
         </div>
