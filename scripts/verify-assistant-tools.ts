@@ -75,6 +75,49 @@ async function main() {
       }
     });
     report.push({ tool: 'create_draft_invoice', ok: !!inv.created?.href, detail: String(inv.created?.title) });
+
+    const priorCash = (company as CompanyProfile | null)?.cash_on_hand ?? null;
+    const cash = await executeAssistantTool(sb, 'set_cash_on_hand', { amount: 123456 }, company as CompanyProfile);
+    cleanup.push(async () => {
+      await sb.from('company_profile').update({ cash_on_hand: priorCash }).eq('id', 1);
+    });
+    report.push({ tool: 'set_cash_on_hand', ok: !!cash.created?.href, detail: String(cash.created?.title) });
+
+    const member = await executeAssistantTool(sb, 'create_team_member', {
+      name: `${TAG} Engineer`,
+      role: 'Verify',
+      basic: 50000,
+    }, company as CompanyProfile);
+    const memberId = (member.result as { id: string }).id;
+    cleanup.push(async () => { await sb.from('team_members').delete().eq('id', memberId); });
+    report.push({ tool: 'create_team_member', ok: !!member.created?.href, detail: String(member.created?.title) });
+
+    const pay = await executeAssistantTool(sb, 'upsert_paycheck', {
+      member_id: memberId,
+      period: '2099-01',
+      lines: [{ key: 'performance', score: 80 }, { key: 'skill_gap', value: 2000 }],
+    }, company as CompanyProfile);
+    report.push({ tool: 'upsert_paycheck', ok: !!pay.created?.href, detail: String(pay.created?.amount) });
+
+    const paid = await executeAssistantTool(sb, 'mark_payroll_paid', {
+      member_id: memberId,
+      period: '2099-01',
+    }, company as CompanyProfile);
+    const expFromPay = (paid.result as { expense_id?: string }).expense_id;
+    if (expFromPay) cleanup.push(async () => { await sb.from('expenses').delete().eq('id', expFromPay); });
+    report.push({ tool: 'mark_payroll_paid', ok: !!paid.created?.href, detail: String(paid.created?.title) });
+
+    const sub = await executeAssistantTool(sb, 'create_recurring_expense', {
+      title: `${TAG} Cursor Pro`,
+      vendor: 'Anysphere',
+      taxable_amount: 20,
+      tax_split: 'igst',
+      itc_eligible: true,
+      category: 'Software & Subscriptions',
+    }, company as CompanyProfile);
+    const subId = (sub.result as { id: string }).id;
+    cleanup.push(async () => { await sb.from('recurring_expenses').delete().eq('id', subId); });
+    report.push({ tool: 'create_recurring_expense', ok: !!sub.created?.href, detail: String(sub.created?.title) });
   } finally {
     for (const fn of cleanup.reverse()) await fn();
   }

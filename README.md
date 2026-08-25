@@ -119,10 +119,9 @@ Optional: copy `.env.example` to `.env` if you prefer that filename; both `.env`
 ### Supabase (once per project)
 
 1. Create a project ([supabase.com](https://supabase.com)) — Mumbai or Singapore is fine.
-2. **SQL Editor** → paste all of `supabase/schema.sql` → **Run**. Tables, invoice numbering, payment triggers, RLS, seed catalog.
-3. **Storage → New bucket** named `brand`, **Public** (logo + signature).
-4. Copy URL, anon key, and service-role key into `.env.local`.
-5. After the team has accounts: **Authentication → Providers → Email** → turn **Allow new users to sign up** off. Invite people under **Authentication → Users**. Everyone signed in shares one workspace.
+2. **SQL Editor** → paste all of `supabase/schema.sql` → **Run**. Tables, invoice numbering, payment triggers, RLS, the public `brand` storage bucket (logo + signature), and seed catalog.
+3. Copy URL, anon key, and service-role key into `.env.local`.
+4. After the team has accounts: **Authentication → Providers → Email** → turn **Allow new users to sign up** off. Invite people under **Authentication → Users**. Everyone signed in shares one workspace.
 
 **Auth URLs** (needed on Vercel): Site URL = your live app URL. Redirect URLs = `https://your-app.vercel.app/**` and `http://localhost:3000/**`.
 

@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { assistantTools, executeAssistantTool } from '@/lib/assistant-tools';
-import type { CompanyProfile } from '@/lib/types';
+import { booksSnapshot } from '@/lib/finance';
+import { asComponents, asPayrollLines, previousPeriod } from '@/lib/payroll';
+import { financialYear } from '@/lib/format';
+import type { CompanyProfile, Expense, Invoice, PayrollItem, RecurringExpense, TeamMember } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -63,19 +66,45 @@ export async function POST(req: NextRequest) {
     if (userMsgErr) throw userMsgErr;
     await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
 
-    const [{ data: clients }, { data: items }, { data: companyRow }, { data: invoices }, { data: retainers }] = await Promise.all([
+    const fy = financialYear();
+    const workMonth = previousPeriod();
+    const [{ data: clients }, { data: items }, { data: companyRow }, { data: invoices }, { data: retainers },
+      { data: memberRows }, { data: payrollRows }, { data: recExpRows }, { data: expenseRows }, { data: bookInvoices }] = await Promise.all([
       supabase.from('clients').select('id, company_name, contact_person, email, gstin, gst_treatment, place_of_supply_state, currency, payment_terms_days, default_sac, default_gst_rate').eq('status', 'active'),
       supabase.from('items').select('name, description, code, code_type, unit, rate, gst_rate').eq('is_active', true),
       supabase.from('company_profile').select('*').eq('id', 1).single(),
       supabase.from('invoices').select('id, invoice_number, status, total, currency, balance_due, client_id').eq('doc_type', 'invoice').order('invoice_date', { ascending: false }).limit(40),
       supabase.from('recurring_profiles').select('id, title, client_id, frequency, next_run_date, amount, is_active').order('next_run_date'),
+      supabase.from('team_members').select('*').order('name'),
+      supabase.from('payroll_items').select('*').eq('period', workMonth),
+      supabase.from('recurring_expenses').select('*').order('next_run_date'),
+      supabase.from('expenses').select('expense_date, taxable_amount, cgst_amount, sgst_amount, igst_amount, itc_eligible, exchange_rate, category'),
+      supabase.from('invoices').select('invoice_date, status, subtotal, cgst_total, sgst_total, igst_total, exchange_rate, tds_applicable, tds_amount').eq('doc_type', 'invoice'),
     ]);
     const company = (companyRow ?? null) as CompanyProfile | null;
+    const members = ((memberRows ?? []) as TeamMember[]).map((m) => ({ ...m, components: asComponents(m.components) }));
+    const payroll = ((payrollRows ?? []) as PayrollItem[]).map((p) => ({ ...p, lines: asPayrollLines(p.lines) }));
+    const subscriptions = (recExpRows ?? []) as RecurringExpense[];
+    const books = booksSnapshot({
+      invoices: (bookInvoices ?? []) as Invoice[],
+      expenses: (expenseRows ?? []) as Expense[],
+      members,
+      subscriptions,
+      cashOnHand: company?.cash_on_hand,
+      fyStart: fy.start,
+      fyEnd: fy.end,
+    });
+    const { runway } = books;
+    const runwayLine = runway.missingCash
+      ? 'CASH_ON_HAND is not set. Do NOT invent a cash figure or a runway. Ask them to set it in Settings or via set_cash_on_hand.'
+      : runway.months == null
+        ? `Cash on hand: ${company?.cash_on_hand}. Monthly burn is ${books.runway.monthlyBurn} (recipe below). Burn is zero or missing — no runway date.`
+        : `Cash on hand: ${company?.cash_on_hand} INR. Runway: ${runway.months.toFixed(1)} months, until ${runway.date}.`;
 
     const system = `You are the billing assistant inside ${company?.legal_name ?? 'BuildableLabs LLP'}'s invoicing portal.
 Today is ${new Date().toISOString().slice(0, 10)}. Supplier state: ${company?.state ?? 'Telangana'} (${company?.state_code ?? '36'}). Default currency INR.
 
-You can: create clients, draft invoices/quotes, log expenses, record GST payments or ITC credits, create retainers, run due retainers, and mark invoices paid/unpaid.
+You can: create clients, draft invoices/quotes, log expenses, record GST payments or ITC credits, create retainers, run due retainers, mark invoices paid/unpaid, add/update teammates and pay lines, score a work-month paycheck, mark payroll paid (writes a salary expense), create recurring vendor subscriptions, run due subscriptions, and set cash on hand.
 
 CRITICAL — tools:
 - If the user asks to create, log, add, record, mark, or generate anything, you MUST call the matching tool. Never reply "Done." or claim you created a record unless a tool returned success.
@@ -93,6 +122,10 @@ Rules:
 - Travel / Airbnb / hotels / flights / foreign platforms with no Indian GSTIN: category Travel, tax_split none, itc_eligible false.
 - If the founder paid personally and the LLP transferred the same amount to their savings (or reimbursed them): payment_mode reimbursement. That is an LLP business expense, not a loan or drawing.
 - GST credits = itc_utilised on create_gst_payment. Cash to the department = igst_paid / cgst_paid / sgst_paid.
+- Team: the month picker is the WORK month. Pay is released the first week of the following month. Planned pay is not an expense until mark_payroll_paid.
+- Subscriptions (create_recurring_expense) are money OUT. Retainers are invoices IN. Do not mix them.
+- Cash / runway: NEVER invent cash on hand. ${runwayLine}
+- When quoting runway, give months AND a calendar date, and name the burn recipe: typical full-kit payroll (${books.typicalPayroll}) + monthly subscription run-rate (${books.subscriptionRunRate}) + trailing 3-month average GST due (${books.gstAvg3m}) = ${books.runway.monthlyBurn}/month.
 - After a successful tool, reply in one or two short sentences: what was created, the amount, and where to review it. No preamble, no markdown headings.
 
 CLIENTS:
@@ -105,7 +138,33 @@ RECENT INVOICES:
 ${JSON.stringify(invoices ?? [])}
 
 RETAINERS:
-${JSON.stringify(retainers ?? [])}`;
+${JSON.stringify(retainers ?? [])}
+
+TEAM (contracts):
+${JSON.stringify(members.map((m) => ({ id: m.id, name: m.name, role: m.role, is_active: m.is_active, currency: m.currency, components: m.components })))}
+
+PAYROLL WORK MONTH ${workMonth} (planned vs paid):
+${JSON.stringify(payroll.map((p) => ({ id: p.id, team_member_id: p.team_member_id, period: p.period, total: p.total, status: p.status, paid_on: p.paid_on, lines: p.lines })))}
+
+RECURRING SPEND (subscriptions):
+${JSON.stringify(subscriptions.map((s) => ({ id: s.id, title: s.title, vendor: s.vendor, frequency: s.frequency, taxable_amount: s.taxable_amount, gst_rate: s.gst_rate, tax_split: s.tax_split, itc_eligible: s.itc_eligible, next_run_date: s.next_run_date, is_active: s.is_active, currency: s.currency })))}
+
+BOOKS ${fy.label}:
+${JSON.stringify({
+  fy_billed_ex_gst: books.billed,
+  fy_expense_taxable_ex_gst: books.expenseTaxable,
+  fy_net_after_expenses_ex_gst: books.netAfterExpenses,
+  gst_due_this_month: books.gstThisMonth,
+  typical_team_burn: books.typicalPayroll,
+  subscription_run_rate: books.subscriptionRunRate,
+  gst_avg_3m: books.gstAvg3m,
+  cash_on_hand: company?.cash_on_hand ?? null,
+  runway_months: runway.months,
+  runway_date: runway.date,
+  monthly_burn: runway.monthlyBurn,
+  burn_recipe: runway.recipe,
+})}
+`;
 
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -172,7 +231,7 @@ ${JSON.stringify(retainers ?? [])}`;
     if (messages[0]?.role === 'assistant') messages.shift();
 
     const wantsRecord = images.length > 0
-      || /\b(invoice|quote|expense|client|gst|itc|retainer|log|create|add|record|mark|paid|unpaid|credit|challan)\b/i.test(message);
+      || /\b(invoice|quote|expense|client|gst|itc|retainer|subscription|payroll|salary|teammate|paycheck|cash on hand|log|create|add|record|mark|paid|unpaid|credit|challan)\b/i.test(message);
 
     let draft: Awaited<ReturnType<typeof executeAssistantTool>>['draft'] = null;
     const created: NonNullable<Awaited<ReturnType<typeof executeAssistantTool>>['created']>[] = [];
@@ -199,7 +258,7 @@ ${JSON.stringify(retainers ?? [])}`;
           messages.push({ role: 'assistant', content: blocks });
           messages.push({
             role: 'user',
-            content: 'You did not call a tool, so nothing was saved. If a receipt or screenshot is in this thread, you can see it — extract the figures and call the matching tool now (create_expense, create_draft_invoice, create_client, create_gst_payment, or create_retainer). Do not claim the image is missing. Do not reply Done without a tool result.',
+            content: 'You did not call a tool, so nothing was saved. If a receipt or screenshot is in this thread, you can see it — extract the figures and call the matching tool now (create_expense, create_draft_invoice, create_client, create_gst_payment, create_retainer, create_team_member, upsert_paycheck, mark_payroll_paid, create_recurring_expense, or set_cash_on_hand). Do not claim the image is missing. Do not reply Done without a tool result.',
           });
           continue;
         }

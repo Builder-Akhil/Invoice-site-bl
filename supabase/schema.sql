@@ -56,6 +56,7 @@ create table if not exists company_profile (
   default_gst_rate  numeric(5,2) not null default 18,
   lut_number        text,                                  -- for zero-rated exports
   fy_start_month    int not null default 4,                -- April
+  cash_on_hand      numeric(14,2),                         -- typed in Settings; null = not set (do not fake runway)
   updated_at        timestamptz not null default now()
 );
 
@@ -322,6 +323,65 @@ create table if not exists recurring_profiles (
 );
 
 -- ---------------------------------------------------------------------------
+-- 8b. TEAM  (flexible contract pay lines in JSONB — not frozen columns)
+-- ---------------------------------------------------------------------------
+create table if not exists team_members (
+  id             uuid primary key default gen_random_uuid(),
+  name           text not null,
+  role           text,
+  email          text,
+  start_date     date,
+  is_active      boolean not null default true,
+  notes          text,
+  currency       text not null default 'INR',
+  exchange_rate  numeric(14,6) not null default 1,
+  components     jsonb not null default '[]'::jsonb,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+create table if not exists payroll_items (
+  id              uuid primary key default gen_random_uuid(),
+  team_member_id  uuid not null references team_members(id) on delete cascade,
+  period          text not null,                          -- YYYY-MM of the *work* month
+  lines           jsonb not null default '[]'::jsonb,     -- snapshot + this month's score / rupees
+  total           numeric(14,2) not null default 0,
+  status          text not null default 'planned',        -- planned | paid
+  paid_on         date,
+  expense_id      uuid references expenses(id) on delete set null,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  unique (team_member_id, period)
+);
+create index if not exists payroll_items_period_idx on payroll_items (period);
+
+-- ---------------------------------------------------------------------------
+-- 8c. RECURRING VENDOR SPEND  (subscriptions — money out, not retainers)
+-- ---------------------------------------------------------------------------
+create table if not exists recurring_expenses (
+  id              uuid primary key default gen_random_uuid(),
+  title           text not null,
+  vendor          text not null,
+  category        text not null default 'Software & Subscriptions',
+  frequency       text not null default 'monthly',
+  next_run_date   date not null default current_date,
+  day_of_month    int default 1,
+  taxable_amount  numeric(14,2) not null default 0,
+  gst_rate        numeric(5,2) not null default 18,
+  tax_split       text not null default 'igst',            -- igst | cgst_sgst | none
+  itc_eligible    boolean not null default true,
+  currency        text not null default 'INR',
+  exchange_rate   numeric(14,6) not null default 1,
+  is_active       boolean not null default true,
+  notes           text,
+  last_run_at     timestamptz,
+  created_at      timestamptz not null default now()
+);
+create index if not exists recurring_expenses_next_idx on recurring_expenses (next_run_date);
+
+alter table company_profile add column if not exists cash_on_hand numeric(14,2);
+
+-- ---------------------------------------------------------------------------
 -- 9. ACTIVITY LOG
 -- ---------------------------------------------------------------------------
 create table if not exists activity_log (
@@ -426,7 +486,8 @@ do $$
 declare t text;
 begin
   foreach t in array array['company_profile','clients','items','invoices','invoice_items',
-                           'payments','expenses','gst_payments','recurring_profiles','activity_log']
+                           'payments','expenses','gst_payments','recurring_profiles','activity_log',
+                           'team_members','payroll_items','recurring_expenses']
   loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists team_all on %I', t);
@@ -469,6 +530,39 @@ drop policy if exists conv_msg_own on conversation_messages;
 create policy conv_msg_own on conversation_messages for all to authenticated
   using (exists (select 1 from conversations c where c.id = conversation_id and c.user_id = auth.uid()))
   with check (exists (select 1 from conversations c where c.id = conversation_id and c.user_id = auth.uid()));
+
+-- ---------------------------------------------------------------------------
+-- 11c. STORAGE — public bucket for logo + authorised signature
+-- ---------------------------------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'brand', 'brand', true, 5242880,
+  array['image/png','image/jpeg','image/jpg','image/webp','image/gif','image/svg+xml']
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists brand_public_read on storage.objects;
+create policy brand_public_read on storage.objects
+  for select using (bucket_id = 'brand');
+
+drop policy if exists brand_auth_insert on storage.objects;
+create policy brand_auth_insert on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'brand');
+
+drop policy if exists brand_auth_update on storage.objects;
+create policy brand_auth_update on storage.objects
+  for update to authenticated
+  using (bucket_id = 'brand')
+  with check (bucket_id = 'brand');
+
+drop policy if exists brand_auth_delete on storage.objects;
+create policy brand_auth_delete on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'brand');
 
 -- ---------------------------------------------------------------------------
 -- 12. SEED — your existing catalog + the AAFM India client from BL-000016

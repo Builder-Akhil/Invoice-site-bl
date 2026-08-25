@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
-import { Upload, Save, Building2, Landmark, Hash, Palette, MapPin } from 'lucide-react';
+import { Upload, Save, Building2, Landmark, Hash, Palette, MapPin, Fuel } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
 import { useProfile } from '@/lib/hooks';
 import type { CompanyProfile } from '@/lib/types';
@@ -11,6 +11,7 @@ import { Card, Field, Input, Loading, PageHeader, Select, Textarea, toast, Spinn
 
 const TABS = [
   { key: 'company', label: 'Company', icon: Building2 },
+  { key: 'cash', label: 'Cash & runway', icon: Fuel },
   { key: 'address', label: 'Address & GST', icon: MapPin },
   { key: 'bank', label: 'Banking', icon: Landmark },
   { key: 'docs', label: 'Numbering & defaults', icon: Hash },
@@ -44,7 +45,7 @@ export default function SettingsPage() {
   async function upload(file: File, kind: 'logo' | 'signature') {
     const path = `${kind}-${Date.now()}-${file.name.replace(/[^\w.-]/g, '')}`;
     const { error } = await sb().storage.from('brand').upload(path, file, { upsert: true });
-    if (error) return toast(`Upload failed: ${error.message}. Create a public bucket named "brand" in Supabase → Storage.`, 'error');
+    if (error) return toast(error.message, 'error');
     const { data } = sb().storage.from('brand').getPublicUrl(path);
     set(kind === 'logo' ? 'logo_url' : 'signature_url', data.publicUrl);
     toast('Uploaded — remember to save');
@@ -88,6 +89,22 @@ export default function SettingsPage() {
             <Field label="Phone"><Input value={f.phone ?? ''} onChange={(e) => set('phone', e.target.value)} /></Field>
             <Field label="Website" className="sm:col-span-2"><Input value={f.website ?? ''} onChange={(e) => set('website', e.target.value)} /></Field>
           </div>
+        </Card>
+      )}
+
+      {tab === 'cash' && (
+        <Card title="Cash on hand" subtitle="Fuel remaining in the tanks. Runway on the dashboard is cash ÷ (typical full-kit payroll + monthly subscriptions + trailing 3-month GST due). Leave blank if you have not counted it — we will not invent a number.">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Cash on hand (INR)" hint="Bank + wallets you treat as available. Update after each big in or out.">
+              <Input type="number" step="0.01" className="input-mono" placeholder="Not set"
+                value={f.cash_on_hand ?? ''}
+                onChange={(e) => set('cash_on_hand', e.target.value === '' ? null : Number(e.target.value))} />
+            </Field>
+          </div>
+          <p className="mt-4 rounded-lg border border-line bg-ink-800/50 px-4 py-3 text-[12.5px] leading-relaxed text-chrome">
+            Zero is a real number (empty tanks). Clearing the field means “I have not told you yet.”
+            Ask the assistant to quote runway only after this is current — like asking for remaining flight time after you read the fuel gauges.
+          </p>
         </Card>
       )}
 
@@ -202,8 +219,8 @@ export default function SettingsPage() {
           </Card>
 
           <p className="lg:col-span-2 rounded-lg border border-line bg-ink-800/50 px-4 py-3 text-[12px] leading-relaxed text-chrome">
-            Uploads go to a Supabase Storage bucket named <span className="font-mono text-chrome-light">brand</span>.
-            Create it once under Storage → New bucket → name it <span className="font-mono text-chrome-light">brand</span> → make it public.
+            Logo and signature live in a public storage locker named <span className="font-mono text-chrome-light">brand</span>
+            so they print on invoices and PDFs. After you upload, click <strong className="text-white">Save changes</strong>.
           </p>
         </div>
       )}

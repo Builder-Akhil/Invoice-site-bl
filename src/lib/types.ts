@@ -42,6 +42,8 @@ export interface CompanyProfile {
   default_due_days: number; default_terms: string | null; default_notes: string | null;
   default_sac: string | null; default_gst_rate: number; lut_number: string | null;
   fy_start_month: number;
+  /** INR in the bank as typed in Settings. `null` = not set — never invent runway from this. */
+  cash_on_hand: number | null;
 }
 
 export interface Client {
@@ -158,6 +160,78 @@ export interface RecurringProfile {
   clients?: Client | null;
 }
 
+export type PayKind = 'fixed_monthly' | 'percent_of_base' | 'capped_amount' | 'note';
+
+/** One contract pay line. Extra JSON fields are kept, never stripped. */
+export interface PayComponent {
+  key: string;
+  kind: PayKind | string;
+  label: string;
+  conditions?: string;
+  amount?: number;
+  pct?: number;
+  cap?: number;
+  enabled: boolean;
+  [extra: string]: unknown;
+}
+
+/** Snapshot of a pay line for one work month, plus the score / rupees entered that month. */
+export interface PayrollLine extends PayComponent {
+  score?: number;
+  value?: number;
+  computed: number;
+}
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  role: string | null;
+  email: string | null;
+  start_date: string | null;
+  is_active: boolean;
+  notes: string | null;
+  currency: string;
+  exchange_rate: number;
+  components: PayComponent[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PayrollItem {
+  id: string;
+  team_member_id: string;
+  period: string;
+  lines: PayrollLine[];
+  total: number;
+  status: 'planned' | 'paid';
+  paid_on: string | null;
+  expense_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TaxSplit = 'igst' | 'cgst_sgst' | 'none';
+
+export interface RecurringExpense {
+  id: string;
+  title: string;
+  vendor: string;
+  category: string;
+  frequency: string;
+  next_run_date: string;
+  day_of_month: number | null;
+  taxable_amount: number;
+  gst_rate: number;
+  tax_split: TaxSplit;
+  itc_eligible: boolean;
+  currency: string;
+  exchange_rate: number;
+  is_active: boolean;
+  notes: string | null;
+  last_run_at: string | null;
+  created_at: string;
+}
+
 export const EXPENSE_CATEGORIES = [
   'Software & Subscriptions', 'Cloud & Infrastructure', 'AI / API Credits',
   'Contractor & Freelance', 'Salaries & Wages', 'Professional Fees',
@@ -183,7 +257,8 @@ export interface ChatDraft {
 
 /** A record the assistant actually wrote to the database. */
 export interface ChatCreated {
-  kind: 'invoice' | 'expense' | 'client' | 'gst' | 'retainer' | 'status';
+  kind: 'invoice' | 'expense' | 'client' | 'gst' | 'retainer' | 'status'
+    | 'team' | 'payroll' | 'subscription' | 'cash';
   href: string;
   title: string;
   subtitle?: string;

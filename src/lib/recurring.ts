@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeTotals, resolveTaxMode, supplierState } from './gst';
 import { defaultPlaceOfSupply } from './gst';
-import type { Client, CompanyProfile, InvoiceLine, RecurringProfile } from './types';
+import { splitExpenseTax } from './finance';
+import type { Client, CompanyProfile, InvoiceLine, RecurringExpense, RecurringProfile } from './types';
 
 export function advance(dateISO: string, frequency: string, dayOfMonth?: number | null) {
   const d = new Date(dateISO + 'T00:00:00');
@@ -96,4 +97,41 @@ export async function generateFromProfile(
   });
 
   return inserted as { id: string; invoice_number: string };
+}
+
+/** Logs one vendor expense from a subscription profile and rolls its next run date. */
+export async function generateExpenseFromRecurring(
+  admin: SupabaseClient,
+  rec: RecurringExpense,
+  onDate?: string,
+) {
+  const expense_date = onDate ?? rec.next_run_date;
+  const tax = splitExpenseTax(Number(rec.taxable_amount), Number(rec.gst_rate), rec.tax_split ?? 'igst');
+  const { data, error } = await admin.from('expenses').insert({
+    expense_date,
+    vendor_name: rec.vendor,
+    category: rec.category,
+    description: rec.title,
+    taxable_amount: rec.taxable_amount,
+    ...tax,
+    itc_eligible: rec.itc_eligible,
+    currency: rec.currency ?? 'INR',
+    exchange_rate: rec.exchange_rate ?? 1,
+    payment_mode: 'card',
+    reference: rec.id,
+    notes: `Recurring spend: ${rec.title}`,
+  }).select('id, vendor_name, total_amount, currency').single();
+  if (error) throw error;
+
+  const next = advance(expense_date, rec.frequency, rec.day_of_month);
+  await admin.from('recurring_expenses').update({
+    next_run_date: next, last_run_at: new Date().toISOString(),
+  }).eq('id', rec.id);
+
+  await admin.from('activity_log').insert({
+    entity: 'expense', entity_id: data.id, action: 'recurring_expense_generated',
+    detail: `${rec.title} → ${expense_date}`, actor: 'system',
+  });
+
+  return data as { id: string; vendor_name: string; total_amount: number; currency: string };
 }

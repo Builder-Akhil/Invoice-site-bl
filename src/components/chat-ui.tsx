@@ -1,7 +1,7 @@
 'use client';
 import { useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowUp, FileText, ImagePlus, Landmark, Loader2, Mic, Receipt, Square, UserPlus, X } from 'lucide-react';
+import { ArrowUp, Banknote, CreditCard, FileText, Fuel, ImagePlus, Landmark, Loader2, Mic, Receipt, Square, UserPlus, UsersRound, X } from 'lucide-react';
 import { money } from '@/lib/format';
 import { compressImage, isAllowedImage, previewOf, useDictation } from '@/lib/chat';
 import { toast } from '@/components/ui';
@@ -15,7 +15,12 @@ function CreatedCards({ items, onOpenDraft }: { items: ChatCreated[]; onOpenDraf
         const Icon = item.kind === 'expense' ? Receipt
           : item.kind === 'client' ? UserPlus
             : item.kind === 'gst' ? Landmark
-              : FileText;
+              : item.kind === 'team' ? UsersRound
+                : item.kind === 'payroll' ? Banknote
+                  : item.kind === 'subscription' ? CreditCard
+                    : item.kind === 'cash' ? Fuel
+                      : item.kind === 'retainer' ? FileText
+                        : FileText;
         return (
           <button key={`${item.kind}-${item.id ?? i}`} type="button" onClick={() => {
             if (item.kind === 'invoice' && item.id) onOpenDraft?.(item.id);

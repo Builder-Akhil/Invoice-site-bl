@@ -1,10 +1,15 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createDraftServer, type DraftInput } from './server-invoice';
-import { generateFromProfile } from './recurring';
+import { generateExpenseFromRecurring, generateFromProfile } from './recurring';
 import { setInvoicePaidStatus } from './invoice-status';
 import { computeTotals, stateCodeFromGstin, stateNameByCode } from './gst';
-import { EXPENSE_CATEGORIES, type ChatCreated, type CompanyProfile, type Invoice, type InvoiceLine, type RecurringProfile, type Client } from './types';
+import { splitExpenseTax } from './finance';
+import {
+  applyPayrollEdits, asComponents, asPayrollLines, computeLines, defaultPayComponents,
+  previousPeriod, salaryExpensePayload, snapshotPayroll,
+} from './payroll';
+import { EXPENSE_CATEGORIES, type ChatCreated, type CompanyProfile, type Invoice, type InvoiceLine, type RecurringExpense, type RecurringProfile, type Client, type PayComponent, type TeamMember } from './types';
 import { money } from './format';
 
 export const assistantTools: Anthropic.Tool[] = [
@@ -179,9 +184,190 @@ export const assistantTools: Anthropic.Tool[] = [
       required: ['invoice_number', 'paid'],
     },
   },
+  {
+    name: 'create_team_member',
+    description: 'Add a teammate with flexible pay lines (JSONB). Omit components to use the default contract template (basic, skill-gap cap, performance % of basic, client bonus % of basic).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        role: { type: 'string' },
+        email: { type: 'string' },
+        start_date: { type: 'string', description: 'YYYY-MM-DD' },
+        basic: { type: 'number', description: 'Monthly basic in INR if using the default template. Default 50000.' },
+        notes: { type: 'string' },
+        currency: { type: 'string' },
+        components: {
+          type: 'array',
+          description: 'Full pay-line list. If omitted, default template is used. Extra fields are kept.',
+          items: {
+            type: 'object',
+            properties: {
+              key: { type: 'string' },
+              kind: { type: 'string', enum: ['fixed_monthly', 'percent_of_base', 'capped_amount', 'note'] },
+              label: { type: 'string' },
+              amount: { type: 'number' },
+              pct: { type: 'number' },
+              cap: { type: 'number' },
+              enabled: { type: 'boolean' },
+              conditions: { type: 'string' },
+            },
+            required: ['label', 'kind'],
+          },
+        },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'update_team_member',
+    description: 'Update a teammate (name, role, active flag, or replace their pay-line list). Identify by id or name.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        member_id: { type: 'string' },
+        name: { type: 'string', description: 'Current name, used to find them if member_id is omitted' },
+        new_name: { type: 'string' },
+        role: { type: 'string' },
+        email: { type: 'string' },
+        is_active: { type: 'boolean' },
+        notes: { type: 'string' },
+        basic: { type: 'number', description: 'If set, updates the `base` fixed_monthly amount on the current contract' },
+        components: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              key: { type: 'string' },
+              kind: { type: 'string' },
+              label: { type: 'string' },
+              amount: { type: 'number' },
+              pct: { type: 'number' },
+              cap: { type: 'number' },
+              enabled: { type: 'boolean' },
+              conditions: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    name: 'upsert_paycheck',
+    description: 'Set scores / rupee amounts for a teammate’s work-month paycheck (period YYYY-MM). Creates a planned row if missing. Does not mark paid.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        member_id: { type: 'string' },
+        name: { type: 'string' },
+        period: { type: 'string', description: 'Work month YYYY-MM. Defaults to the previous calendar month.' },
+        lines: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              key: { type: 'string', description: 'e.g. performance, client_bonus, skill_gap, base' },
+              score: { type: 'number', description: '0–100 for percent_of_base lines' },
+              value: { type: 'number', description: 'Rupees for capped_amount lines' },
+            },
+            required: ['key'],
+          },
+        },
+      },
+    },
+  },
+  {
+    name: 'mark_payroll_paid',
+    description: 'Mark a work-month paycheck paid and write a Salaries & Wages expense (no GST, no ITC). Identify by member id or name plus period.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        member_id: { type: 'string' },
+        name: { type: 'string' },
+        period: { type: 'string', description: 'Work month YYYY-MM' },
+      },
+    },
+  },
+  {
+    name: 'create_recurring_expense',
+    description: 'Create a recurring vendor subscription (money out). Example: Cursor Pro monthly, ITC eligible. Distinct from retainers (invoices in).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        vendor: { type: 'string' },
+        category: { type: 'string', enum: EXPENSE_CATEGORIES },
+        frequency: { type: 'string', enum: ['weekly', 'monthly', 'quarterly', 'yearly'] },
+        taxable_amount: { type: 'number', description: 'Amount before GST, per cycle' },
+        gst_rate: { type: 'number' },
+        tax_split: { type: 'string', enum: ['igst', 'cgst_sgst', 'none'] },
+        itc_eligible: { type: 'boolean' },
+        next_run_date: { type: 'string' },
+        day_of_month: { type: 'number' },
+        currency: { type: 'string' },
+        notes: { type: 'string' },
+      },
+      required: ['title', 'taxable_amount'],
+    },
+  },
+  {
+    name: 'run_due_subscriptions',
+    description: 'Log due recurring vendor expenses (same job the nightly cron runs for subscriptions).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        expense_id: { type: 'string', description: 'Optional UUID — omit to run every due subscription' },
+      },
+    },
+  },
+  {
+    name: 'set_cash_on_hand',
+    description: 'Set the INR cash-on-hand figure used for runway. Never invent this — only call when the user states an amount. Set clear=true to unset so runway is not quoted.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        amount: { type: 'number', description: 'INR available' },
+        clear: { type: 'boolean', description: 'If true, clears cash on hand (runway will not be quoted)' },
+      },
+    },
+  },
 ];
 
 export type ToolCreatedDraft = Awaited<ReturnType<typeof createDraftServer>> | null;
+
+function parsePayComponents(raw: unknown, basic = 50000): PayComponent[] {
+  if (!Array.isArray(raw) || raw.length === 0) return defaultPayComponents(basic);
+  return asComponents(raw.map((row, i) => {
+    const r = (row ?? {}) as Record<string, unknown>;
+    return {
+      ...r,
+      key: String(r.key ?? `custom_${i}`),
+      kind: String(r.kind ?? 'fixed_monthly'),
+      label: String(r.label ?? 'Pay line'),
+      enabled: r.enabled !== false,
+    };
+  }));
+}
+
+async function findMember(supabase: SupabaseClient, input: Record<string, unknown>): Promise<TeamMember> {
+  const id = String(input.member_id ?? '').trim();
+  const name = String(input.name ?? '').trim();
+  if (id) {
+    const { data, error } = await supabase.from('team_members').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('No teammate with that id');
+    return { ...data, components: asComponents(data.components) } as TeamMember;
+  }
+  if (!name) throw new Error('Need member_id or name');
+  const { data, error } = await supabase.from('team_members').select('*');
+  if (error) throw error;
+  const rows = (data ?? []) as TeamMember[];
+  const lower = name.toLowerCase();
+  const hit = rows.find((m) => m.name.toLowerCase() === lower)
+    ?? rows.find((m) => m.name.toLowerCase().includes(lower));
+  if (!hit) throw new Error(`No teammate named ${name}`);
+  return { ...hit, components: asComponents(hit.components) };
+}
 
 export async function executeAssistantTool(
   supabase: SupabaseClient,
@@ -410,6 +596,183 @@ export async function executeAssistantTool(
         href: `/invoices/${updated.id}`,
         title: updated.invoice_number,
         subtitle: updated.status === 'paid' ? 'Marked paid' : 'Marked unpaid',
+      },
+    };
+  }
+
+  if (name === 'create_team_member') {
+    const basic = Number(input.basic ?? 50000);
+    const components = parsePayComponents(input.components, basic);
+    const { data, error } = await supabase.from('team_members').insert({
+      name: String(input.name).trim(),
+      role: input.role ?? null,
+      email: input.email ?? null,
+      start_date: input.start_date ?? null,
+      notes: input.notes ?? null,
+      currency: input.currency || 'INR',
+      is_active: true,
+      components,
+    }).select('id, name, role').single();
+    if (error) throw error;
+    return {
+      result: { ...data, components },
+      created: { kind: 'team', id: data.id, href: '/team', title: data.name, subtitle: data.role || 'Teammate added' },
+    };
+  }
+
+  if (name === 'update_team_member') {
+    const member = await findMember(supabase, input);
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (input.new_name) patch.name = String(input.new_name).trim();
+    if (input.role !== undefined) patch.role = input.role;
+    if (input.email !== undefined) patch.email = input.email;
+    if (input.notes !== undefined) patch.notes = input.notes;
+    if (input.is_active !== undefined) patch.is_active = !!input.is_active;
+    let components = member.components;
+    if (Array.isArray(input.components) && input.components.length) {
+      components = parsePayComponents(input.components);
+      patch.components = components;
+    } else if (input.basic !== undefined) {
+      components = asComponents(member.components).map((c) =>
+        c.key === 'base' && c.kind === 'fixed_monthly' ? { ...c, amount: Number(input.basic) } : c);
+      patch.components = components;
+    }
+    const { data, error } = await supabase.from('team_members').update(patch).eq('id', member.id)
+      .select('id, name, role, is_active').single();
+    if (error) throw error;
+    return {
+      result: { ...data, components },
+      created: { kind: 'team', id: data.id, href: '/team', title: data.name, subtitle: 'Teammate updated' },
+    };
+  }
+
+  if (name === 'upsert_paycheck') {
+    const member = await findMember(supabase, input);
+    const period = String(input.period || previousPeriod());
+    const edits = Array.isArray(input.lines)
+      ? (input.lines as { key: string; score?: number; value?: number }[])
+      : [];
+    const { data: existing, error: exErr } = await supabase.from('payroll_items')
+      .select('*').eq('team_member_id', member.id).eq('period', period).maybeSingle();
+    if (exErr) throw exErr;
+    if (existing && existing.status === 'paid') throw new Error(`${member.name} ${period} is already paid`);
+    const baseLines = existing
+      ? asPayrollLines(existing.lines)
+      : snapshotPayroll(member.components, 'zero').lines;
+    const { lines, total } = applyPayrollEdits(baseLines, edits);
+    const payload = { team_member_id: member.id, period, lines, total, status: 'planned', updated_at: new Date().toISOString() };
+    const q = existing?.id
+      ? supabase.from('payroll_items').update(payload).eq('id', existing.id)
+      : supabase.from('payroll_items').insert(payload);
+    const { data, error } = await q.select('id, period, total, status').single();
+    if (error) throw error;
+    return {
+      result: { ...data, member: member.name, lines },
+      created: {
+        kind: 'payroll', id: data.id, href: '/team', title: `${member.name} · ${period}`,
+        subtitle: 'Paycheck scores saved', amount: money(Number(data.total), member.currency),
+      },
+    };
+  }
+
+  if (name === 'mark_payroll_paid') {
+    const member = await findMember(supabase, input);
+    const period = String(input.period || previousPeriod());
+    const { data: item, error: itemErr } = await supabase.from('payroll_items')
+      .select('*').eq('team_member_id', member.id).eq('period', period).maybeSingle();
+    if (itemErr) throw itemErr;
+    if (!item) throw new Error(`No paycheck for ${member.name} in ${period} — score it first`);
+    if (item.status === 'paid') throw new Error(`${member.name} ${period} is already paid`);
+    const lines = asPayrollLines(item.lines);
+    const { total } = computeLines(lines, 'entered');
+    if (total <= 0) throw new Error('Total is zero — nothing to pay');
+    const paidOn = today;
+    const { data: exp, error: expErr } = await supabase.from('expenses').insert(
+      salaryExpensePayload(member, { period, total }, paidOn),
+    ).select('id').single();
+    if (expErr || !exp) throw expErr ?? new Error('Could not write salary expense');
+    const { data, error } = await supabase.from('payroll_items').update({
+      total, status: 'paid', paid_on: paidOn, expense_id: exp.id, updated_at: new Date().toISOString(),
+    }).eq('id', item.id).select('id, period, total, status, paid_on').single();
+    if (error) throw error;
+    return {
+      result: { ...data, member: member.name, expense_id: exp.id },
+      created: {
+        kind: 'payroll', id: data.id, href: '/expenses', title: `${member.name} · ${period} paid`,
+        subtitle: 'Salaries & Wages (no GST)', amount: money(Number(data.total), member.currency),
+      },
+    };
+  }
+
+  if (name === 'create_recurring_expense') {
+    const split = String(input.tax_split ?? 'igst');
+    const taxable = Number(input.taxable_amount) || 0;
+    const tax = splitExpenseTax(taxable, Number(input.gst_rate ?? 18), split);
+    const vendor = String(input.vendor ?? input.title);
+    const start = String(input.next_run_date || today);
+    const { data, error } = await supabase.from('recurring_expenses').insert({
+      title: input.title,
+      vendor,
+      category: input.category || 'Software & Subscriptions',
+      frequency: input.frequency || 'monthly',
+      next_run_date: start,
+      day_of_month: Number(input.day_of_month ?? 1),
+      taxable_amount: taxable,
+      gst_rate: tax.gst_rate,
+      tax_split: split,
+      itc_eligible: input.itc_eligible ?? split !== 'none',
+      currency: input.currency || 'INR',
+      notes: input.notes ?? null,
+      is_active: true,
+    }).select('id, title, vendor, next_run_date, taxable_amount, frequency').single();
+    if (error) throw error;
+    return {
+      result: data,
+      created: {
+        kind: 'subscription', id: data.id, href: '/recurring-expenses', title: data.title,
+        subtitle: `${data.frequency} · next ${data.next_run_date}`,
+        amount: money(Number(data.taxable_amount)),
+      },
+    };
+  }
+
+  if (name === 'run_due_subscriptions') {
+    const expenseId = input.expense_id ? String(input.expense_id) : undefined;
+    let q = supabase.from('recurring_expenses').select('*').eq('is_active', true);
+    q = expenseId ? q.eq('id', expenseId) : q.lte('next_run_date', today);
+    const { data: recs, error } = await q;
+    if (error) throw error;
+    const logged: string[] = [];
+    const failed: string[] = [];
+    for (const rec of (recs ?? []) as RecurringExpense[]) {
+      try {
+        const exp = await generateExpenseFromRecurring(supabase, rec, expenseId ? today : undefined);
+        logged.push(`${exp.vendor_name}`);
+      } catch (e) {
+        failed.push(`${rec.title}: ${e instanceof Error ? e.message : 'error'}`);
+      }
+    }
+    return {
+      result: { created: logged, failed, checked: recs?.length ?? 0 },
+      created: logged.length ? {
+        kind: 'subscription' as const, href: '/expenses', title: logged.join(', '),
+        subtitle: 'Subscription expenses logged',
+      } : undefined,
+    };
+  }
+
+  if (name === 'set_cash_on_hand') {
+    const amount = input.clear ? null : Number(input.amount);
+    if (!input.clear && !Number.isFinite(amount)) throw new Error('Cash on hand must be a number in INR, or clear=true to unset it');
+    const { data, error } = await supabase.from('company_profile').update({
+      cash_on_hand: amount, updated_at: new Date().toISOString(),
+    }).eq('id', 1).select('cash_on_hand').single();
+    if (error) throw error;
+    return {
+      result: { cash_on_hand: data.cash_on_hand },
+      created: {
+        kind: 'cash', href: '/settings', title: amount === null ? 'Cash on hand cleared' : money(amount),
+        subtitle: amount === null ? 'Runway will not be quoted until you set it' : 'Cash on hand updated',
       },
     };
   }

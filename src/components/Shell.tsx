@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, FileText, Users, Package, Receipt, Repeat, Landmark,
-  Settings, LogOut, FileSignature, Menu, X, MessageSquare,
+  Settings, LogOut, FileSignature, Menu, X, MessageSquare, UsersRound, CreditCard,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
 import { Wordmark } from './Logo';
@@ -17,8 +17,10 @@ const NAV = [
   { href: '/invoices', label: 'Invoices', icon: FileText },
   { href: '/quotes', label: 'Quotes', icon: FileSignature },
   { href: '/clients', label: 'Clients', icon: Users },
+  { href: '/team', label: 'Team', icon: UsersRound },
   { href: '/items', label: 'Services', icon: Package },
   { href: '/recurring', label: 'Retainers', icon: Repeat },
+  { href: '/recurring-expenses', label: 'Subscriptions', icon: CreditCard },
   { href: '/expenses', label: 'Expenses', icon: Receipt },
   { href: '/gst', label: 'GST & Tax', icon: Landmark },
 ];
@@ -35,7 +37,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   useEffect(() => { setOpen(false); }, [pathname]);
 
   const signOut = async () => { await sb().auth.signOut(); router.push('/login'); router.refresh(); };
-  const isActive = (href: string) => href === '/' ? pathname === '/' : pathname.startsWith(href);
+  const isActive = (href: string) => {
+    if (href === '/') return pathname === '/';
+    if (href === '/recurring') return pathname === '/recurring';
+    return pathname.startsWith(href);
+  };
   const hideChat = pathname.startsWith('/chats');
 
   return (
