@@ -4,7 +4,8 @@ import { createServerSupabase } from '@/lib/supabase/server';
 import { assistantTools, executeAssistantTool } from '@/lib/assistant-tools';
 import { booksSnapshot } from '@/lib/finance';
 import { asComponents, asPayrollLines, previousPeriod } from '@/lib/payroll';
-import { financialYear } from '@/lib/format';
+import { financialYear, todayISO } from '@/lib/format';
+import { resolveSacCodes, sacOptionLabel } from '@/lib/sac';
 import type { CompanyProfile, Expense, Invoice, PayrollItem, RecurringExpense, TeamMember } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -82,6 +83,7 @@ export async function POST(req: NextRequest) {
       supabase.from('invoices').select('invoice_date, status, subtotal, cgst_total, sgst_total, igst_total, exchange_rate, tds_applicable, tds_amount').eq('doc_type', 'invoice'),
     ]);
     const company = (companyRow ?? null) as CompanyProfile | null;
+    const sacCodes = resolveSacCodes(company?.sac_codes);
     const members = ((memberRows ?? []) as TeamMember[]).map((m) => ({ ...m, components: asComponents(m.components) }));
     const payroll = ((payrollRows ?? []) as PayrollItem[]).map((p) => ({ ...p, lines: asPayrollLines(p.lines) }));
     const subscriptions = (recExpRows ?? []) as RecurringExpense[];
@@ -102,7 +104,7 @@ export async function POST(req: NextRequest) {
         : `Cash on hand: ${company?.cash_on_hand} INR. Runway: ${runway.months.toFixed(1)} months, until ${runway.date}.`;
 
     const system = `You are the billing assistant inside ${company?.legal_name ?? 'BuildableLabs LLP'}'s invoicing portal.
-Today is ${new Date().toISOString().slice(0, 10)}. Supplier state: ${company?.state ?? 'Telangana'} (${company?.state_code ?? '36'}). Default currency INR.
+Today is ${todayISO()}. Supplier state: ${company?.state ?? 'Telangana'} (${company?.state_code ?? '36'}). Default currency INR.
 
 You can: create clients, draft invoices/quotes, log expenses, record GST payments or ITC credits, create retainers, run due retainers, mark invoices paid/unpaid, add/update teammates and pay lines, score a work-month paycheck, mark payroll paid (writes a salary expense), create recurring vendor subscriptions, run due subscriptions, and set cash on hand.
 
@@ -116,7 +118,12 @@ Rules:
 - Only call create_client when the company genuinely is not in the list.
 - Indian shorthand: "2.5L"/"2.5 lakh" = 250000, "1cr" = 10000000, "50k" = 50000.
 - Invoice rates are ALWAYS exclusive of GST. If the user gives an inclusive figure, back it out and say so.
-- Default gst_rate 18 unless told otherwise. Pull SAC codes and rates from the SERVICES catalog when the item matches.
+- Default gst_rate 18 unless told otherwise. Pull rates from the SERVICES catalog when the item matches.
+- SAC: pick a code from SAC_CODES by the work described, not from a stale catalog default. Advisory / consulting / CTO / strategy → 998313 (Advisory). Apps, websites, software, engineering, design & development → 998314 (IT design). Training / coaching / workshops → 999293 (Training). Extra Settings tags work the same way. If unsure, omit code — the server matches from the line name. Never invent a SAC that is not on the list.
+- TERMS on create_draft_invoice:
+  - User says Net 7 / 15 / 30 / 45 / 60 or Due on Receipt → set terms_label to that exact preset and OMIT due_date. Due is invoice date (today unless they named another invoice date) plus those days.
+  - User names a calendar due date → terms_label Custom and due_date YYYY-MM-DD. Do not also send a Net preset.
+  - Mention neither → omit terms_label and due_date (client payment terms).
 - Never invent GSTINs, invoice numbers or tax splits — the system computes those.
 - Expenses: default tax_split igst (most SaaS). Same-state India vendors → cgst_sgst. itc_eligible true unless told otherwise.
 - Travel / Airbnb / hotels / flights / foreign platforms with no Indian GSTIN: category Travel, tax_split none, itc_eligible false.
@@ -132,6 +139,9 @@ Rules:
 
 CLIENTS:
 ${JSON.stringify(clients ?? [])}
+
+SAC_CODES (tagged list from Settings; use these on every service line):
+${JSON.stringify(sacCodes.map((s) => ({ code: s.code, tag: s.tag, label: s.label, pick: sacOptionLabel(s) })))}
 
 SERVICES CATALOG:
 ${JSON.stringify(items ?? [])}

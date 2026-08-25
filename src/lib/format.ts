@@ -61,14 +61,27 @@ export function fmtDateLong(d?: string | Date | null) {
   if (isNaN(date.getTime())) return '—';
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
-export const todayISO = () => new Date().toISOString().slice(0, 10);
-export function addDays(iso: string, days: number) {
-  const d = new Date(iso + 'T00:00:00');
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+/** Calendar today in India — invoices and due dates should not slip a day on UTC servers. */
+export const APP_TZ = 'Asia/Kolkata';
+
+export function todayISO(d = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: APP_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(d);
 }
+
+function utcDay(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return Date.UTC(y, (m || 1) - 1, d || 1);
+}
+
+export function addDays(iso: string, days: number) {
+  const ms = utcDay(iso) + days * 86400000;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
 export function daysBetween(a: string, b: string) {
-  return Math.round((new Date(b + 'T00:00:00').getTime() - new Date(a + 'T00:00:00').getTime()) / 86400000);
+  return Math.round((utcDay(b) - utcDay(a)) / 86400000);
 }
 export const monthKey = (iso: string) => iso.slice(0, 7);
 export function monthLabel(key: string) {

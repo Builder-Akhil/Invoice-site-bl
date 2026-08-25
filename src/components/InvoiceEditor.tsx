@@ -9,18 +9,13 @@ import {
   resolveTaxMode, stateNameByCode, supplierState,
 } from '@/lib/gst';
 import { CURRENCIES, addDays, money, num, todayISO } from '@/lib/format';
+import { TERM_PRESETS, resolveInvoiceTerms } from '@/lib/terms';
 import { UNITS, unitLabel, type Client, type DocType, type Invoice, type InvoiceLine, type TaxMode } from '@/lib/types';
 import { Card, Field, Input, Loading, Modal, PageHeader, Select, Textarea, Toggle, toast, Spinner } from './ui';
 import { SacPicker } from './SacPicker';
 import { resolveSacCodes } from '@/lib/sac';
 import ClientForm from './ClientForm';
 import InvoicePaper from './InvoicePaper';
-
-const TERM_PRESETS = [
-  { label: 'Due on Receipt', days: 0 }, { label: 'Net 7', days: 7 }, { label: 'Net 15', days: 15 },
-  { label: 'Net 30', days: 30 }, { label: 'Net 45', days: 45 }, { label: 'Net 60', days: 60 },
-  { label: 'Custom', days: -1 },
-];
 
 export default function InvoiceEditor({ docType, invoiceId, presetClientId }: {
   docType: DocType; invoiceId?: string; presetClientId?: string | null;
@@ -104,8 +99,10 @@ export default function InvoiceEditor({ docType, invoiceId, presetClientId }: {
       currency: c.currency || 'INR',
       exchange_rate: (c.currency || 'INR') === 'INR' ? 1 : Number(s.exchange_rate) || 83,
       tax_mode: mode,
-      terms_label: c.payment_terms_days === 0 ? 'Due on Receipt' : `Net ${c.payment_terms_days}`,
-      due_date: addDays(s.invoice_date ?? todayISO(), c.payment_terms_days ?? 7),
+      ...resolveInvoiceTerms({
+        invoiceDate: s.invoice_date ?? todayISO(),
+        paymentTermsDays: c.payment_terms_days,
+      }),
       tds_applicable: c.tds_applicable,
       tds_section: c.tds_section, tds_rate: c.tds_rate ?? 10,
       subject: s.subject || `${c.company_name} — ${docType === 'quote' ? 'Proposal' : 'Services'}`,
@@ -240,7 +237,9 @@ export default function InvoiceEditor({ docType, invoiceId, presetClientId }: {
                 </Field>
 
                 <Field label="Terms">
-                  <Select value={h.terms_label ?? 'Custom'} onChange={(e) => {
+                  <Select
+                    value={TERM_PRESETS.some((t) => t.label === h.terms_label) ? h.terms_label! : 'Custom'}
+                    onChange={(e) => {
                     const preset = TERM_PRESETS.find((t) => t.label === e.target.value)!;
                     set('terms_label', preset.label);
                     if (preset.days >= 0) set('due_date', addDays(h.invoice_date ?? todayISO(), preset.days));

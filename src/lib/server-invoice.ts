@@ -1,5 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeTotals, defaultPlaceOfSupply, resolveTaxMode, supplierState } from './gst';
+import { todayISO } from './format';
+import { resolveLineSac } from './sac';
+import { resolveInvoiceTerms } from './terms';
 import type { Client, CompanyProfile, InvoiceLine, TaxMode } from './types';
 
 export interface DraftLineInput {
@@ -12,6 +15,8 @@ export interface DraftInput {
   doc_type?: 'invoice' | 'quote';
   invoice_date?: string;
   due_date?: string;
+  terms_label?: string;
+  payment_terms_days?: number;
   subject?: string;
   notes?: string;
   terms?: string;
@@ -20,11 +25,6 @@ export interface DraftInput {
   exchange_rate?: number;
   line_items: DraftLineInput[];
 }
-
-const addDays = (iso: string, n: number) => {
-  const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-};
 
 /** Creates a draft invoice/quote server-side with correct GST treatment. */
 export async function createDraftServer(
@@ -35,13 +35,18 @@ export async function createDraftServer(
   const c = client as Client;
 
   const docType = input.doc_type ?? 'invoice';
-  const invoice_date = input.invoice_date ?? new Date().toISOString().slice(0, 10);
+  const invoice_date = input.invoice_date ?? todayISO();
   const pos = defaultPlaceOfSupply(c);
   const mode: TaxMode = resolveTaxMode(supplierState(company).code, c.gst_treatment, pos.code);
 
+  const fallbackSac = c.default_sac ?? company?.default_sac ?? null;
   const lines: InvoiceLine[] = input.line_items.map((l, i) => ({
     position: i, name: l.name, description: l.description ?? null,
-    code_type: l.code_type ?? 'SAC', code: l.code ?? c.default_sac ?? company?.default_sac ?? null,
+    code_type: l.code_type ?? 'SAC',
+    code: resolveLineSac({
+      name: l.name, description: l.description, code: l.code, codeType: l.code_type,
+      fallback: fallbackSac, codes: company?.sac_codes,
+    }),
     unit: l.unit ?? 'qty', quantity: Number(l.quantity ?? 1), rate: Number(l.rate ?? 0),
     discount_pct: Number(l.discount_pct ?? 0), taxable_value: 0,
     gst_rate: Number(l.gst_rate ?? c.default_gst_rate ?? company?.default_gst_rate ?? 18),
@@ -59,8 +64,14 @@ export async function createDraftServer(
     doc_type: docType, invoice_number: number as string,
     client_id: c.id, client_snapshot: c,
     invoice_date,
-    due_date: input.due_date ?? addDays(invoice_date, c.payment_terms_days ?? company?.default_due_days ?? 7),
-    terms_label: `Net ${c.payment_terms_days ?? 7}`,
+    ...resolveInvoiceTerms({
+      invoiceDate: invoice_date,
+      dueDate: input.due_date,
+      termsLabel: input.terms_label
+        ?? (input.payment_terms_days != null ? `Net ${input.payment_terms_days}` : undefined),
+      paymentTermsDays: input.payment_terms_days ?? c.payment_terms_days,
+      defaultDueDays: company?.default_due_days ?? 7,
+    }),
     subject: input.subject ?? null,
     place_of_supply: pos.name, place_of_supply_code: pos.code,
     tax_mode: mode,

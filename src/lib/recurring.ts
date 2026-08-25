@@ -3,6 +3,7 @@ import { computeTotals, resolveTaxMode, supplierState } from './gst';
 import { defaultPlaceOfSupply } from './gst';
 import { splitExpenseTax } from './finance';
 import { fetchInrRate } from './fx';
+import { resolveInvoiceTerms } from './terms';
 import type { Client, CompanyProfile, InvoiceLine, RecurringExpense, RecurringProfile } from './types';
 
 export function advance(dateISO: string, frequency: string, dayOfMonth?: number | null) {
@@ -17,11 +18,6 @@ export function advance(dateISO: string, frequency: string, dayOfMonth?: number 
   }
   return d.toISOString().slice(0, 10);
 }
-
-const addDays = (iso: string, n: number) => {
-  const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-};
 
 /** Creates one draft invoice from a recurring profile and rolls its next run date. */
 export async function generateFromProfile(
@@ -54,8 +50,10 @@ export async function generateFromProfile(
     client_id: client.id,
     client_snapshot: client,
     invoice_date,
-    due_date: addDays(invoice_date, profile.due_days ?? client.payment_terms_days ?? 7),
-    terms_label: `Net ${profile.due_days ?? 7}`,
+    ...resolveInvoiceTerms({
+      invoiceDate: invoice_date,
+      paymentTermsDays: profile.due_days ?? client.payment_terms_days ?? 7,
+    }),
     subject: profile.subject ?? profile.title,
     place_of_supply: pos.name, place_of_supply_code: pos.code,
     tax_mode: mode, currency: profile.currency ?? client.currency ?? 'INR', exchange_rate: 1,

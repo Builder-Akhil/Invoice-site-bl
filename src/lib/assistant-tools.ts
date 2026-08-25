@@ -11,7 +11,8 @@ import {
   previousPeriod, salaryExpensePayload, snapshotPayroll,
 } from './payroll';
 import { EXPENSE_CATEGORIES, type ChatCreated, type CompanyProfile, type Invoice, type InvoiceLine, type RecurringExpense, type RecurringProfile, type Client, type PayComponent, type TeamMember } from './types';
-import { money } from './format';
+import { money, todayISO } from './format';
+import { resolveLineSac } from './sac';
 
 export const assistantTools: Anthropic.Tool[] = [
   {
@@ -40,14 +41,32 @@ export const assistantTools: Anthropic.Tool[] = [
     name: 'create_draft_invoice',
     description:
       'Create a DRAFT invoice or quote for an existing client. Always use a client_id from the provided client list. '
-      + 'GST treatment, place of supply, IGST vs CGST+SGST and the invoice number are computed automatically — do not guess them.',
+      + 'GST treatment, place of supply, IGST vs CGST+SGST and the invoice number are computed automatically — do not guess them. '
+      + 'Set terms_label to a Net preset (omit due_date) or Custom with a calendar due_date. '
+      + 'SAC on each line must come from the company SAC tag list, or omit code to auto-match.',
     input_schema: {
       type: 'object',
       properties: {
         client_id: { type: 'string', description: 'UUID from the client list' },
         doc_type: { type: 'string', enum: ['invoice', 'quote'] },
         invoice_date: { type: 'string', description: 'YYYY-MM-DD, defaults to today' },
-        due_date: { type: 'string', description: 'YYYY-MM-DD, defaults to client payment terms' },
+        terms_label: {
+          type: 'string',
+          enum: ['Due on Receipt', 'Net 7', 'Net 15', 'Net 30', 'Net 45', 'Net 60', 'Custom'],
+          description:
+            'Payment terms. "Net 15" → due date is invoice date + 15 days. '
+            + 'Use Custom only when the user names a calendar due date. Omit both to use the client default.',
+        },
+        due_date: {
+          type: 'string',
+          description:
+            'YYYY-MM-DD. Send ONLY with terms_label Custom (user named a date). '
+            + 'Omit for Net / Due on Receipt — the server adds those days to the invoice date.',
+        },
+        payment_terms_days: {
+          type: 'number',
+          description: 'Alternative to terms_label: 0 = Due on Receipt, 15 = Net 15, etc.',
+        },
         subject: { type: 'string' },
         notes: { type: 'string' },
         po_number: { type: 'string' },
@@ -63,7 +82,13 @@ export const assistantTools: Anthropic.Tool[] = [
               unit: { type: 'string', enum: ['qty', 'hour', 'day', 'month', 'project', 'user', 'sprint', 'license'] },
               rate: { type: 'number', description: 'Rate per unit, excluding GST' },
               gst_rate: { type: 'number', description: '0, 5, 12, 18 or 28' },
-              code: { type: 'string', description: 'SAC or HSN code' },
+              code: {
+                type: 'string',
+                description:
+                  'SAC from the company SAC list (998313 Advisory, 998314 IT design, 999293 Training, or a Settings tag). '
+                  + 'Omit to auto-match from the line name.',
+              },
+              code_type: { type: 'string', enum: ['SAC', 'HSN'] },
               discount_pct: { type: 'number' },
             },
             required: ['name', 'rate'],
@@ -378,7 +403,7 @@ export async function executeAssistantTool(
   actor?: string | null,
 ): Promise<{ result: unknown; draft?: ToolCreatedDraft; created?: ChatCreated }> {
   const input = (raw ?? {}) as Record<string, unknown>;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
 
   if (name === 'create_client') {
     const gstin = String(input.gstin ?? '');
@@ -517,8 +542,15 @@ export async function executeAssistantTool(
       position: i,
       name: String(l.name),
       description: l.description ? String(l.description) : null,
-      code_type: 'SAC',
-      code: l.code ? String(l.code) : (company?.default_sac ?? '999293'),
+      code_type: String(l.code_type ?? 'SAC'),
+      code: resolveLineSac({
+        name: String(l.name),
+        description: l.description ? String(l.description) : null,
+        code: l.code ? String(l.code) : null,
+        codeType: l.code_type ? String(l.code_type) : 'SAC',
+        fallback: company?.default_sac,
+        codes: company?.sac_codes,
+      }),
       unit: String(l.unit ?? 'month'),
       quantity: Number(l.quantity ?? 1),
       rate: Number(l.rate ?? 0),
