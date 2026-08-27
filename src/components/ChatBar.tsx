@@ -162,7 +162,7 @@ export default function ChatBar() {
                 <kbd className="ml-1 hidden rounded-md border border-line bg-ink-800 px-1.5 py-0.5 font-mono text-[10px] text-chrome sm:inline">{hint}</kbd>
               </p>
               <div className="flex items-center gap-1">
-                <Link href="/chats" className="btn-subtle btn-xs" onClick={closeChat}>History</Link>
+                <Link href="/app/chats" className="btn-subtle btn-xs" onClick={closeChat}>History</Link>
                 {msgs.length > 0 && (
                   <button className="btn-subtle btn-xs" onClick={() => { setMsgs([]); setConversationId(null); }}>Clear</button>
                 )}

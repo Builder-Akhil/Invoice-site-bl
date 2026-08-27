@@ -2,7 +2,9 @@
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
+import Link from 'next/link';
 import { sb } from '@/lib/supabase/client';
+import { PRODUCT } from '@/lib/product';
 import { LogoMark } from '@/components/Logo';
 import { Field, Input, Spinner } from '@/components/ui';
 import { ArrowRight } from 'lucide-react';
@@ -29,7 +31,7 @@ function LoginForm() {
       } else {
         const { error } = await sb().auth.signInWithPassword({ email, password });
         if (error) throw error;
-        router.push(params.get('next') || '/');
+        router.push(params.get('next') || '/app');
         router.refresh();
       }
     } catch (e2) {
@@ -41,16 +43,22 @@ function LoginForm() {
     <div className="grid min-h-screen place-items-center px-5 py-10">
       <div className="w-full max-w-[400px]">
         <div className="mb-8 flex flex-col items-center gap-4 text-center">
-          <LogoMark size={44} />
+          <Link href="/" className="transition-opacity hover:opacity-80"><LogoMark size={42} /></Link>
           <div>
-            <h1 className="font-display text-[34px] leading-none text-white">Buildable Labs</h1>
-            <p className="label-mono mt-2">BILLING &amp; GST PORTAL · LLP</p>
+            <h1 className="font-display text-[32px] leading-none tracking-[-0.015em] text-white">
+              {mode === 'signin' ? `Welcome back to ${PRODUCT.name}` : `Start with ${PRODUCT.name}`}
+            </h1>
+            <p className="mt-2 text-[12.5px] text-chrome">
+              {mode === 'signin'
+                ? 'Your invoices, GST position and clients.'
+                : 'Three invoices a month, free, forever. No card.'}
+            </p>
           </div>
         </div>
 
         <form onSubmit={submit} className="card card-pad space-y-4">
           <Field label="Work email">
-            <Input type="email" required autoComplete="email" placeholder="akhil@buildablelabs.com"
+            <Input type="email" required autoComplete="email" placeholder="you@company.com"
               value={email} onChange={(e) => setEmail(e.target.value)} />
           </Field>
           <Field label="Password">
@@ -72,8 +80,8 @@ function LoginForm() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-[11px] leading-relaxed text-chrome-dark">
-          Team access is managed in Supabase → Authentication → Users.
+        <p className="mt-6 text-center text-[11.5px] text-chrome-dark">
+          <Link href="/" className="hover:text-chrome">← Back to {PRODUCT.name}</Link>
         </p>
       </div>
     </div>

@@ -67,7 +67,7 @@ export default function InvoicePaper({ invoice, lines, client, profile, classNam
 
         <div className="shrink-0 text-right">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={displayLogo(profile?.logo_url)} alt="Buildable Labs"
+          <img src={displayLogo(profile?.logo_url)} alt=""
             style={{ height: 62, marginLeft: 'auto', objectFit: 'contain' }} />
           <p style={{ fontSize: 11.5, fontWeight: 800, marginTop: 10, color: '#1A1D24' }}>{profile?.legal_name ?? 'BuildableLabs LLP'}</p>
           {supplierAddr.map((l, i) => <p key={i} style={{ fontSize: 10.5, color: '#4A5162', lineHeight: 1.55 }}>{l}</p>)}
@@ -260,7 +260,7 @@ export default function InvoicePaper({ invoice, lines, client, profile, classNam
       </div>
 
       <p style={{ marginTop: 30, paddingTop: 12, borderTop: '1px solid #E6E8EE', fontSize: 9, color: '#9AA2B3', textAlign: 'center', letterSpacing: '0.06em' }}>
-        {(profile?.trade_name ?? 'BUILDABLE LABS').toUpperCase()} · {profile?.website?.replace(/^https?:\/\//, '') ?? 'buildablelabs.com'} · ANYTHING IS BUILDABLE
+        {(profile?.trade_name ?? profile?.legal_name ?? '').toUpperCase()} · {profile?.website?.replace(/^https?:\/\//, '') ?? 'buildablelabs.com'} · ANYTHING IS BUILDABLE
       </p>
     </div>
   );

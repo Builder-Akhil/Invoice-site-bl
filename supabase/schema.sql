@@ -620,3 +620,130 @@ select 'AAFM India','AAFM India',null,null,'registered_business','09AAYCA1840R1Z
   'Main Najafgarh Road, Shivaji Marg, Moti Nagar','New Delhi','Delhi','110015','India',
   7,'999293',true,'194J',10
 where not exists (select 1 from clients where company_name = 'AAFM India');
+
+-- ---------------------------------------------------------------------------
+-- 13. PLAN + INTEGRATIONS  (added for the public product)
+--
+--     Secrets are stored ENCRYPTED (AES-256-GCM, see src/lib/crypto.ts) and
+--     are never selected by the browser — only the server routes under
+--     /api/integrations read the *_enc columns. The browser reads *_mask.
+--
+--     Requires APP_ENCRYPTION_KEY in the environment. Generate one with:
+--       node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+-- ---------------------------------------------------------------------------
+alter table company_profile add column if not exists plan text not null default 'free';
+alter table company_profile add column if not exists plan_renews_on date;
+
+create table if not exists integration_settings (
+  id                       int primary key default 1,
+
+  -- which model answers first; the other is the automatic fallback
+  ai_primary               text not null default 'deepseek',
+  ai_fallback_enabled      boolean not null default true,
+
+  deepseek_key_enc         text,
+  deepseek_key_mask        text,
+  deepseek_model           text,
+
+  claude_key_enc           text,
+  claude_key_mask          text,
+  claude_model             text,
+
+  -- WhatsApp Cloud API (Meta)
+  whatsapp_enabled         boolean not null default false,
+  whatsapp_phone_number_id text,
+  whatsapp_token_enc       text,
+  whatsapp_token_mask      text,
+  whatsapp_verify_token    text,
+  whatsapp_allowed_numbers text[] not null default '{}',
+
+  -- Telegram Bot API
+  telegram_enabled         boolean not null default false,
+  telegram_bot_username    text,
+  telegram_token_enc       text,
+  telegram_token_mask      text,
+  telegram_allowed_chats   text[] not null default '{}',
+
+  -- Whose chat history channel messages land in. Set when a channel is enabled.
+  channel_owner_user_id    uuid references auth.users(id) on delete set null,
+
+  updated_at               timestamptz not null default now(),
+  constraint integration_settings_singleton check (id = 1)
+);
+
+insert into integration_settings (id) values (1) on conflict (id) do nothing;
+
+alter table integration_settings enable row level security;
+
+-- No policy on purpose. RLS denies by default, so neither the browser nor a
+-- leaked anon key can read this table at all -- not even the ciphertext. The
+-- only way in is GET/POST /api/integrations, which verifies the session and
+-- then uses the service role, returning masks instead of secrets.
+drop policy if exists integration_read on integration_settings;
+
+-- Monthly invoice count for the free-plan cap. Counts issued documents only —
+-- drafts and cancelled invoices are free, matching what the UI promises.
+create or replace function invoices_issued_this_month()
+returns int language sql stable
+set search_path = public
+as $$
+  select count(*)::int from invoices
+  where doc_type = 'invoice'
+    and status not in ('draft', 'cancelled')
+    and invoice_date >= date_trunc('month', current_date)
+    and invoice_date <  date_trunc('month', current_date) + interval '1 month';
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 14. FREE-PLAN CAP  (enforced in the database, not the UI)
+--
+--     The browser holds an anon key and can write to `invoices` directly, so a
+--     check in React or an API route is a suggestion, not a limit. This trigger
+--     is the actual boundary.
+--
+--     Only *issuing* is metered: a document is free while it is a draft and
+--     free once cancelled, which is exactly what the pricing page promises.
+-- ---------------------------------------------------------------------------
+create or replace function enforce_invoice_plan_cap()
+returns trigger language plpgsql
+set search_path = public
+as $$
+declare
+  current_plan text;
+  cap int;
+  issued int;
+begin
+  -- Quotes are never metered.
+  if new.doc_type <> 'invoice' then return new; end if;
+
+  -- Only care about the transition into an issued state.
+  if new.status in ('draft', 'cancelled') then return new; end if;
+  if tg_op = 'UPDATE' and old.status not in ('draft', 'cancelled') then return new; end if;
+
+  select coalesce(plan, 'free') into current_plan from company_profile where id = 1;
+  -- Keep in sync with PLANS[].invoicesPerMonth in src/lib/product.ts.
+  cap := case current_plan when 'free' then 3 else null end;
+  if cap is null then return new; end if;
+
+  select count(*) into issued from invoices
+  where doc_type = 'invoice'
+    and status not in ('draft', 'cancelled')
+    and invoice_date >= date_trunc('month', new.invoice_date)
+    and invoice_date <  date_trunc('month', new.invoice_date) + interval '1 month'
+    and id <> new.id;
+
+  if issued >= cap then
+    raise exception
+      'Free plan allows % issued invoices per month and % are already issued for %. Drafts stay unlimited — upgrade to Pro to issue this one.',
+      cap, issued, to_char(new.invoice_date, 'Mon YYYY')
+      using errcode = 'check_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists invoices_plan_cap on invoices;
+create trigger invoices_plan_cap
+  before insert or update of status on invoices
+  for each row execute function enforce_invoice_plan_cap();

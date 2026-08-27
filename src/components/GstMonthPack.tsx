@@ -33,7 +33,7 @@ function LineTable({
           {lines.map((l) => (
             <tr key={l.invoice.id}>
               <td className="td">
-                <Link href={`/invoices/${l.invoice.id}`} className="font-mono text-[12.5px] text-white hover:text-blue-200">
+                <Link href={`/app/invoices/${l.invoice.id}`} className="font-mono text-[12.5px] text-white hover:text-blue-200">
                   {l.invoice.invoice_number}
                 </Link>
                 {l.gstin && <span className="mt-0.5 block font-mono text-[10.5px] text-chrome-dark">{l.gstin}</span>}

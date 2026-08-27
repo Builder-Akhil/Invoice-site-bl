@@ -1,6 +1,6 @@
 'use client';
 import { Suspense, useEffect, useMemo, useState } from 'react';
-import { Landmark, Plus, Trash2, CheckCircle2, AlertTriangle, ChevronDown } from 'lucide-react';
+import { Landmark, Plus, Trash2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
 import { useClients, useProfile } from '@/lib/hooks';
 import { useListFilters } from '@/lib/list-filters';
@@ -10,7 +10,8 @@ import {
   buildGstPacks, gstr1CsvRows, llpAccountLabel, packCsvRows, packSummaryText, type MonthPack, type PeriodType,
 } from '@/lib/gst-compliance';
 import {
-  Card, EmptyState, Field, Input, Loading, Modal, PageHeader, Select, Tabs, Textarea, toast, useConfirm, Spinner,
+  Card, Collapse, EmptyState, Field, InfoHint, Input, Loading, Modal, PageHeader, Select, Tabs,
+  Textarea, Tooltip, StatTile, toast, useConfirm, Spinner,
 } from '@/components/ui';
 import GstMonthPack, { copyPack } from '@/components/GstMonthPack';
 
@@ -23,6 +24,21 @@ const GST_FILTERS = {
   cadence: 'monthly',
   fy: financialYear().start,
   month: todayISO().slice(0, 7),
+};
+
+/**
+ * The explanations that used to sit in a wall of prose under the table. Each
+ * one now hangs off the ⓘ next to the thing it explains, so the numbers get the
+ * page and the teaching is one hover away.
+ */
+const TIPS = {
+  collected: 'GST on invoices your clients have already paid. You do not owe tax on an invoice until the money lands.',
+  claim: 'GST you already paid on company bills — Cursor, AWS, Adobe. Officially called input tax credit (ITC).',
+  pay: 'Tax collected minus claim back. Pay this from the LLP bank account, never a personal one.',
+  paid: 'Challans you have already logged against these periods.',
+  unpaid: 'GST sitting on invoices nobody has paid yet. Not due until they do.',
+  cadence: 'Most firms file monthly on GSTR-3B. Quarterly is the QRMP scheme, for smaller turnovers.',
+  split: 'Same GST, split by whether the client is in your state (CGST + SGST) or another (IGST). The CSV keeps the split for your CA.',
 };
 
 export default function GstPage() {
@@ -148,49 +164,56 @@ function GstInner() {
     <>
       <PageHeader
         title="GST & Tax"
-        subtitle="Tax collected from clients, minus tax you can claim back on company bills. That leftover is what you pay the Government.">
-        <Select className="max-w-[150px]" value={fyStart} onChange={(e) => set('fy', e.target.value)}>
+        hint="Tax you collected from clients, minus tax you can claim back on company bills. What is left is what you pay the Government — and only on invoices that have actually been paid."
+        meta={[
+          `${ytd.share} paid invoice${ytd.share === 1 ? '' : 's'}`,
+          ytd.zero > 0 ? `exports ${moneyShort(ytd.zero)}` : null,
+          ytd.outstanding > 0.5 ? `waiting on unpaid ${moneyShort(ytd.outstanding)}` : null,
+        ].filter(Boolean) as string[]}>
+        <Select className="max-w-[140px]" value={fyStart} onChange={(e) => set('fy', e.target.value)}>
           {fyOptions.map((o) => <option key={o.start} value={o.start}>{o.label}</option>)}
         </Select>
         <button className="btn-primary" onClick={() => openRecord()}>
-          <Plus size={15} /> Record GST payment
+          <Plus size={15} /> Record payment
         </button>
       </PageHeader>
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          ['Tax collected', ytd.output, 'text-white'],
-          ['Claim back', ytd.itc, 'text-emerald-300'],
-          ['Pay from company', ytd.net, 'text-amber-300'],
-          ['Already paid', ytd.paid, 'text-blue-300'],
-        ].map(([l, v, c]) => (
-          <div key={l as string} className="card px-4 py-3">
-            <p className="label-mono">{l as string}</p>
-            <p className={`mt-1.5 font-display text-[26px] leading-none ${c as string}`}>{moneyShort(v as number)}</p>
-          </div>
-        ))}
+        <StatTile label="Tax collected" value={moneyShort(ytd.output)} hint={TIPS.collected} />
+        <StatTile label="Claim back" value={moneyShort(ytd.itc)} tone="text-emerald-300" hint={TIPS.claim} />
+        <StatTile label="Pay from company" value={moneyShort(ytd.net)} tone="text-amber-300" hint={TIPS.pay} />
+        <StatTile label="Already paid" value={moneyShort(ytd.paid)} tone="text-blue-300" hint={TIPS.paid} />
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <Tabs active={periodType} onChange={(k) => set('cadence', k)}
-          tabs={[{ key: 'monthly', label: 'Monthly' }, { key: 'quarterly', label: 'Quarterly' }]} />
-      </div>
-
-      <Card bodyClass="" className="mb-5" title="This year"
-        subtitle="Click a month to see the invoices behind it.">
+      <Card
+        bodyClass=""
+        className="mb-5"
+        title="This year"
+        hint={TIPS.cadence}
+        subtitle="Click a period to open its pack."
+        action={
+          <Tabs active={periodType} onChange={(k) => set('cadence', k)}
+            tabs={[{ key: 'monthly', label: 'Monthly' }, { key: 'quarterly', label: 'Quarterly' }]} />
+        }>
         {loading ? <Loading />
           : packs.length === 0 ? (
             <EmptyState icon={<Landmark size={18} />} title="Nothing to report yet"
               body="When a client pays an invoice, that tax shows up in the month the money arrived." />
           ) : (
             <div className="scroll-x">
-              <table className="w-full min-w-[720px]">
-                <thead><tr className="bg-ink-800/60">
+              <table className="w-full min-w-[700px]">
+                <thead><tr className="bg-ink-800/50">
                   <th className="th">Period</th>
-                  <th className="th text-right">Paid invoices</th>
-                  <th className="th text-right">Tax in</th>
-                  <th className="th text-right">Claim back</th>
-                  <th className="th text-right">To pay</th>
+                  <th className="th text-right">Paid inv.</th>
+                  <th className="th text-right">
+                    <span className="inline-flex items-center gap-1.5">Tax in <InfoHint tip={TIPS.collected} side="bottom" /></span>
+                  </th>
+                  <th className="th text-right">
+                    <span className="inline-flex items-center gap-1.5">Claim back <InfoHint tip={TIPS.claim} side="bottom" /></span>
+                  </th>
+                  <th className="th text-right">
+                    <span className="inline-flex items-center gap-1.5">To pay <InfoHint tip={TIPS.pay} side="bottom" /></span>
+                  </th>
                   <th className="th text-right">Paid</th>
                   <th className="th">Status</th>
                 </tr></thead>
@@ -205,9 +228,9 @@ function GstInner() {
                         <td className="td">
                           <span className="font-semibold text-white">{b.label}</span>
                           {b.issuedUnpaid.length > 0 && (
-                            <span className="mt-1 block text-[11px] text-chrome">
-                              {b.issuedUnpaid.length} still unpaid
-                            </span>
+                            <Tooltip tip={TIPS.unpaid} side="right" className="ml-2 align-middle">
+                              <span className="chip cursor-help !py-0 text-[10px]">{b.issuedUnpaid.length} unpaid</span>
+                            </Tooltip>
                           )}
                         </td>
                         <td className="td text-right font-mono tabular-nums text-[12.5px] text-white">{b.totals.shareCount}</td>
@@ -242,17 +265,22 @@ function GstInner() {
         </div>
       )}
 
-      <Card title="Payments you already made" subtitle="Challans logged after the GST team filed." bodyClass="">
+      <Card
+        title="Challans logged"
+        hint="Recorded after your CA files. Keeping the CIN and ARN here is what turns a period green."
+        bodyClass="">
         {gstPayments.length === 0 ? (
           <p className="px-5 py-6 text-[13px] text-chrome">Nothing recorded yet.</p>
         ) : (
           <div className="scroll-x">
-            <table className="w-full min-w-[760px]">
-              <thead><tr className="bg-ink-800/60">
+            <table className="w-full min-w-[620px]">
+              <thead><tr className="bg-ink-800/50">
                 <th className="th">Period</th><th className="th">Return</th><th className="th">Paid on</th>
-                <th className="th">Challan / ARN</th><th className="th text-right">IGST</th>
-                <th className="th text-right">CGST</th><th className="th text-right">SGST</th>
-                <th className="th text-right">Total</th><th className="th w-14"></th>
+                <th className="th">Challan / ARN</th>
+                <th className="th text-right">
+                  <span className="inline-flex items-center gap-1.5">Tax paid <InfoHint tip={TIPS.split} side="bottom" /></span>
+                </th>
+                <th className="th w-14"></th>
               </tr></thead>
               <tbody>
                 {gstPayments.map((g) => (
@@ -261,10 +289,24 @@ function GstInner() {
                     <td className="td text-[12.5px] text-[#C9CEDA]">{g.return_type}</td>
                     <td className="td text-[12.5px] text-chrome">{fmtDate(g.paid_on)}</td>
                     <td className="td font-mono text-[11.5px] text-chrome">{g.challan_no || g.arn || '—'}</td>
-                    <td className="td text-right font-mono tabular-nums text-[12.5px] text-chrome">{money(g.igst_paid)}</td>
-                    <td className="td text-right font-mono tabular-nums text-[12.5px] text-chrome">{money(g.cgst_paid)}</td>
-                    <td className="td text-right font-mono tabular-nums text-[12.5px] text-chrome">{money(g.sgst_paid)}</td>
-                    <td className="td text-right font-mono tabular-nums text-[13px] text-white">{money(g.total_paid)}</td>
+                    <td className="td text-right">
+                      {/* The IGST/CGST/SGST split is a CA detail — one hover away, not four columns. */}
+                      <Tooltip
+                        side="left"
+                        tip={
+                          <span className="block space-y-0.5">
+                            <span className="block">IGST {money(g.igst_paid)}</span>
+                            <span className="block">CGST {money(g.cgst_paid)}</span>
+                            <span className="block">SGST {money(g.sgst_paid)}</span>
+                            {Number(g.interest) > 0 && <span className="block">Interest {money(g.interest)}</span>}
+                            {Number(g.late_fee) > 0 && <span className="block">Late fee {money(g.late_fee)}</span>}
+                          </span>
+                        }>
+                        <span className="cursor-help border-b border-dotted border-chrome-dark font-mono tabular-nums text-[13px] text-white">
+                          {money(g.total_paid)}
+                        </span>
+                      </Tooltip>
+                    </td>
                     <td className="td">
                       <div className="flex justify-end gap-1">
                         <button className="btn-subtle btn-xs" onClick={() => { setP({ ...g }); setOpen(true); }}>Edit</button>
@@ -279,32 +321,6 @@ function GstInner() {
         )}
       </Card>
 
-      <details className="card mt-5">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-3.5 text-[13.5px] font-semibold text-white [&::-webkit-details-marker]:hidden">
-          How GST works on this page
-          <ChevronDown size={16} className="shrink-0 text-chrome" />
-        </summary>
-        <div className="space-y-4 border-t border-line px-5 py-4 text-[13px] leading-relaxed text-chrome">
-          <p>
-            Think of an invoice as a boarding pass and the client’s payment as the plane actually landing.
-            You only owe the Government GST after the money has landed — not when you issued the invoice.
-          </p>
-          <ul className="list-disc space-y-2 pl-5">
-            <li><span className="text-white">Tax collected</span> — GST on invoices clients have already paid.</li>
-            <li><span className="text-white">Claim back</span> — GST you already paid on company bills (Cursor, AWS, Adobe). Also called ITC.</li>
-            <li><span className="text-white">Pay from company</span> — tax collected minus claim back. Pay this from the LLP bank account, not a personal one.</li>
-            <li><span className="text-white">Unpaid invoices</span> — wait. That GST is not due until the client pays.</li>
-            <li><span className="text-white">Monthly vs quarterly</span> — most firms file every month (GSTR-3B). Quarterly is the QRMP scheme for smaller turnovers.</li>
-            <li><span className="text-white">CGST / SGST / IGST</span> — same GST, split by whether the client is in your state or another. The year table shows the total; the CSV still has the split for the GST team.</li>
-          </ul>
-          <p>
-            This year: {ytd.share} paid invoice{ytd.share === 1 ? '' : 's'}
-            {ytd.zero > 0 ? ` · exports with no GST ${money(ytd.zero)}` : ''}
-            {ytd.outstanding > 0.5 ? ` · GST still waiting on unpaid invoices ${money(ytd.outstanding)}` : ''}.
-          </p>
-        </div>
-      </details>
-
       <Modal open={open} onClose={() => setOpen(false)} width="max-w-2xl"
         title="Record a GST payment" subtitle={`Paid from ${llpAccountLabel(profile)}.`}
         footer={<><button className="btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
@@ -318,18 +334,30 @@ function GstInner() {
               {['GSTR-3B', 'GSTR-1', 'GSTR-9', 'DRC-03', 'CMP-08'].map((x) => <option key={x}>{x}</option>)}
             </Select>
           </Field>
-          <Field label="Filed on"><Input type="date" value={p.filed_on ?? ''} onChange={(e) => setP({ ...p, filed_on: e.target.value })} /></Field>
           <Field label="Paid on"><Input type="date" value={p.paid_on ?? ''} onChange={(e) => setP({ ...p, paid_on: e.target.value })} /></Field>
-          <Field label="Challan number (CIN)"><Input className="input-mono" value={p.challan_no ?? ''} onChange={(e) => setP({ ...p, challan_no: e.target.value })} /></Field>
-          <Field label="ARN"><Input className="input-mono" value={p.arn ?? ''} onChange={(e) => setP({ ...p, arn: e.target.value })} /></Field>
+          <Field label="Challan number (CIN)" tip="From the payment receipt on the GST portal.">
+            <Input className="input-mono" value={p.challan_no ?? ''} onChange={(e) => setP({ ...p, challan_no: e.target.value })} />
+          </Field>
           <Field label="IGST paid"><Input type="number" step="0.01" className="input-mono" value={p.igst_paid ?? 0} onChange={(e) => setP({ ...p, igst_paid: Number(e.target.value) })} /></Field>
           <Field label="CGST paid"><Input type="number" step="0.01" className="input-mono" value={p.cgst_paid ?? 0} onChange={(e) => setP({ ...p, cgst_paid: Number(e.target.value) })} /></Field>
           <Field label="SGST paid"><Input type="number" step="0.01" className="input-mono" value={p.sgst_paid ?? 0} onChange={(e) => setP({ ...p, sgst_paid: Number(e.target.value) })} /></Field>
-          <Field label="ITC utilised" hint="Offset from the credit ledger"><Input type="number" step="0.01" className="input-mono" value={p.itc_utilised ?? 0} onChange={(e) => setP({ ...p, itc_utilised: Number(e.target.value) })} /></Field>
-          <Field label="Interest"><Input type="number" step="0.01" className="input-mono" value={p.interest ?? 0} onChange={(e) => setP({ ...p, interest: Number(e.target.value) })} /></Field>
-          <Field label="Late fee"><Input type="number" step="0.01" className="input-mono" value={p.late_fee ?? 0} onChange={(e) => setP({ ...p, late_fee: Number(e.target.value) })} /></Field>
-          <Field label="Notes" className="sm:col-span-2"><Textarea rows={2} value={p.notes ?? ''} onChange={(e) => setP({ ...p, notes: e.target.value })} /></Field>
         </div>
+
+        {/* Six fields most months never need — folded away rather than deleted. */}
+        <Collapse title="Credits, penalties and references" note="optional" className="mt-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="ITC utilised" tip="Credit offset from the ledger. This is not cash leaving the bank.">
+              <Input type="number" step="0.01" className="input-mono" value={p.itc_utilised ?? 0} onChange={(e) => setP({ ...p, itc_utilised: Number(e.target.value) })} />
+            </Field>
+            <Field label="ARN" tip="Acknowledgement Reference Number from the filed return.">
+              <Input className="input-mono" value={p.arn ?? ''} onChange={(e) => setP({ ...p, arn: e.target.value })} />
+            </Field>
+            <Field label="Filed on"><Input type="date" value={p.filed_on ?? ''} onChange={(e) => setP({ ...p, filed_on: e.target.value })} /></Field>
+            <Field label="Interest"><Input type="number" step="0.01" className="input-mono" value={p.interest ?? 0} onChange={(e) => setP({ ...p, interest: Number(e.target.value) })} /></Field>
+            <Field label="Late fee"><Input type="number" step="0.01" className="input-mono" value={p.late_fee ?? 0} onChange={(e) => setP({ ...p, late_fee: Number(e.target.value) })} /></Field>
+            <Field label="Notes" className="sm:col-span-2"><Textarea rows={2} value={p.notes ?? ''} onChange={(e) => setP({ ...p, notes: e.target.value })} /></Field>
+          </div>
+        </Collapse>
       </Modal>
       {confirmNode}
     </>

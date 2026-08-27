@@ -67,7 +67,7 @@ export default function ChatWorkspace({ conversationId }: { conversationId?: str
       });
       setMsgs([...next, { role: 'assistant', content: j.reply, draft: j.draft, created: j.created }]);
       if (j.draft || j.created?.length) router.refresh();
-      if (!conversationId) router.replace(`/chats/${j.conversation_id}`);
+      if (!conversationId) router.replace(`/app/chats/${j.conversation_id}`);
       else loadList();
     } catch (e) {
       setMsgs([...next, { role: 'assistant', content: e instanceof Error ? e.message : 'Something went wrong.' }]);
@@ -79,7 +79,7 @@ export default function ChatWorkspace({ conversationId }: { conversationId?: str
     const { error } = await sb().from('conversations').delete().eq('id', c.id);
     if (error) return toast(error.message, 'error');
     toast('Chat deleted');
-    if (conversationId === c.id) router.push('/chats');
+    if (conversationId === c.id) router.push('/app/chats');
     loadList();
   }
 
@@ -91,7 +91,7 @@ export default function ChatWorkspace({ conversationId }: { conversationId?: str
       <aside className="flex max-h-52 w-full shrink-0 flex-col border-b border-line lg:max-h-none lg:w-[260px] lg:border-b-0 lg:border-r">
         <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-3">
           <p className="text-[13px] font-semibold text-white">Chats</p>
-          <Link href="/chats" onClick={() => { if (!conversationId) { setMsgs([]); setInput(''); } }}
+          <Link href="/app/chats" onClick={() => { if (!conversationId) { setMsgs([]); setInput(''); } }}
             className="btn-primary btn-xs"><Plus size={13} /> New</Link>
         </div>
         <div className="flex-1 overflow-y-auto p-2">
@@ -100,7 +100,7 @@ export default function ChatWorkspace({ conversationId }: { conversationId?: str
               <p className="px-2 py-6 text-center text-[12.5px] text-chrome">No chats yet. Start one on the right — it is saved like a flight log.</p>
             ) : convos.map((c) => (
               <div key={c.id} className={`group mb-0.5 flex items-center rounded-lg ${c.id === conversationId ? 'bg-blue/12 ring-1 ring-inset ring-blue/35' : 'hover:bg-ink-600'}`}>
-                <Link href={`/chats/${c.id}`} className="min-w-0 flex-1 px-3 py-2.5">
+                <Link href={`/app/chats/${c.id}`} className="min-w-0 flex-1 px-3 py-2.5">
                   <span className="block truncate text-[13px] font-medium text-white">{c.title}</span>
                   <span className="block text-[11px] text-chrome-dark">{fmtDate(c.updated_at)}</span>
                 </Link>

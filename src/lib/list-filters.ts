@@ -5,13 +5,13 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 const STORE = 'bl:filters:';
 
 export const FILTER_NAV: Record<string, string> = {
-  '/invoices': 'invoices',
-  '/quotes': 'quotes',
-  '/clients': 'clients',
-  '/items': 'items',
-  '/expenses': 'expenses',
-  '/gst': 'gst',
-  '/team': 'team',
+  '/app/invoices': 'invoices',
+  '/app/quotes': 'quotes',
+  '/app/clients': 'clients',
+  '/app/items': 'items',
+  '/app/expenses': 'expenses',
+  '/app/gst': 'gst',
+  '/app/team': 'team',
 };
 
 type FilterMap = Record<string, string>;
