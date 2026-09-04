@@ -2,8 +2,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
-  TrendingUp, Repeat, Landmark, Plus, ArrowUpRight, AlertTriangle, Wallet, Receipt,
-  UsersRound, CreditCard, Fuel,
+  TrendingUp, Landmark, Plus, ArrowUpRight, AlertTriangle, Wallet, Receipt,
+  UsersRound, Fuel,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
 import { useClients, useProfile } from '@/lib/hooks';
@@ -14,7 +14,7 @@ import {
 } from '@/lib/finance';
 import { financialYear, fmtDate, fmtDateLong, money, moneyShort, monthLabel, todayISO } from '@/lib/format';
 import { useFilterNav } from '@/lib/list-filters';
-import { Card, Loading, PageHeader, StatusPill } from '@/components/ui';
+import { Card, InfoHint, Loading, PageHeader, StatTile, StatusPill } from '@/components/ui';
 
 const MRR_FACTOR: Record<string, number> = { monthly: 1, quarterly: 1 / 3, yearly: 1 / 12, weekly: 52 / 12 };
 
@@ -107,48 +107,52 @@ export default function Dashboard() {
       ? '—'
       : `${runway.months.toFixed(1)} mo`;
   const runwaySub = runway.missingCash
-    ? 'Type cash on hand in Settings — like fuel remaining in the tanks'
+    ? 'Set cash on hand in Settings'
     : runway.date
-      ? `Until ${fmtDateLong(runway.date)} · burn ${moneyShort(runway.monthlyBurn)}/mo`
-      : `Burn is ${moneyShort(runway.monthlyBurn)}/mo (payroll kit + subs + GST avg)`;
+      ? `Until ${fmtDateLong(runway.date)}`
+      : `Burn ${moneyShort(runway.monthlyBurn)}/mo`;
+  const runwayHint = runway.missingCash
+    ? 'We will not invent a cash figure. Enter what is actually in the bank and the runway appears.'
+    : `Cash on hand divided by monthly burn of ${moneyShort(runway.monthlyBurn)} \u2014 typical full-kit payroll ${moneyShort(books.typicalPayroll)} + subscriptions ${moneyShort(books.subscriptionRunRate)} + trailing 3-month average GST ${moneyShort(books.gstAvg3m)}.`;
 
   const tiles = [
-    { label: `Net revenue · ${fy.label}`, value: moneyShort(books.billed), icon: TrendingUp, tone: 'text-white', sub: 'Taxable billed, excluding GST' },
-    { label: 'Net after expenses', value: moneyShort(books.netAfterExpenses), icon: Wallet, tone: books.netAfterExpenses >= 0 ? 'text-emerald-300' : 'text-red-300', sub: 'Billed − expense taxable (ex-GST)' },
-    { label: 'Typical team burn', value: moneyShort(books.typicalPayroll), icon: UsersRound, tone: 'text-amber-300', sub: 'Active crew, every line at maximum' },
-    { label: 'GST due this month', value: moneyShort(books.gstThisMonth), icon: Landmark, tone: 'text-blue-300', sub: 'On payments received, minus ITC' },
-    { label: 'Runway', value: runwayValue, icon: Fuel, tone: runway.missingCash ? 'text-chrome' : 'text-white', sub: runwaySub, href: runway.missingCash ? '/settings' : undefined },
+    { label: `Net revenue · ${fy.label}`, value: moneyShort(books.billed), icon: TrendingUp, tone: 'text-white',
+      hint: 'Everything you billed this financial year, excluding GST. GST is the Government\u2019s money passing through, not revenue.' },
+    { label: 'Net after expenses', value: moneyShort(books.netAfterExpenses), icon: Wallet,
+      tone: books.netAfterExpenses >= 0 ? 'text-emerald-300' : 'text-red-300',
+      hint: 'Billed minus expense taxable, both excluding GST. Not profit \u2014 payroll and tax still come out of this.' },
+    { label: 'Typical team burn', value: moneyShort(books.typicalPayroll), icon: UsersRound, tone: 'text-amber-300',
+      hint: 'What the active crew costs in a month where every pay line hits its maximum. The pessimistic number, on purpose.' },
+    { label: 'GST due this month', value: moneyShort(books.gstThisMonth), icon: Landmark, tone: 'text-blue-300',
+      hint: 'On payments received this month, minus input credit. Unpaid invoices are excluded.' },
+    { label: 'Runway', value: runwayValue, icon: Fuel, tone: runway.missingCash ? 'text-chrome' : 'text-white',
+      foot: runwaySub, hint: runwayHint, href: runway.missingCash ? '/app/settings' : undefined },
   ];
 
   return (
     <>
       <PageHeader title={`${greeting()}, ${(profile?.contact_person ?? 'Akhil').split(' ')[0]}`}
-        subtitle={`${profile?.legal_name ?? 'BuildableLabs LLP'} · ${fy.label} · ${profile?.gstin ?? ''}`}>
-        <Link href="/invoices/new" className="btn-primary"><Plus size={15} /> New invoice</Link>
+        subtitle={`${profile?.legal_name ?? 'Set your company name'} · ${fy.label} · ${profile?.gstin ?? ''}`}>
+        <Link href="/app/invoices/new" className="btn-primary"><Plus size={15} /> New invoice</Link>
       </PageHeader>
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {tiles.map((t) => {
-          const inner = (
-            <>
-              <div className="flex items-start justify-between">
-                <p className="label-mono">{t.label}</p>
-                <t.icon size={15} className="text-chrome-dark" strokeWidth={1.6} />
-              </div>
-              <p className={`mt-2.5 kpi-value text-[28px] xl:text-[30px] ${t.tone}`}>{t.value}</p>
-              <p className="mt-2 text-[11.5px] leading-snug text-chrome-dark">{t.sub}</p>
-            </>
-          );
-          return t.href ? (
-            <Link key={t.label} href={t.href} className="card px-5 py-4 transition hover:border-chrome-dark">{inner}</Link>
-          ) : (
-            <div key={t.label} className="card px-5 py-4">{inner}</div>
-          );
-        })}
+        {tiles.map((t) => (
+          <StatTile
+            key={t.label}
+            label={t.label}
+            value={t.value}
+            tone={t.tone}
+            hint={t.hint}
+            foot={t.foot}
+            href={t.href}
+            icon={<t.icon size={14} strokeWidth={1.6} />}
+          />
+        ))}
       </div>
 
       {overdue > 0 && (
-        <Link href="/invoices?tab=overdue" className="mb-5 flex items-center gap-3 rounded-xl border border-red-900/50 bg-red-950/30 px-4 py-3 text-[13px] text-red-200 transition hover:border-red-800">
+        <Link href="/app/invoices?tab=overdue" className="mb-5 flex items-center gap-3 rounded-xl border border-red-900/50 bg-red-950/30 px-4 py-3 text-[13px] text-red-200 transition hover:border-red-800">
           <AlertTriangle size={16} className="shrink-0" />
           <span><strong>{money(overdue)}</strong> is overdue across {overdueList.length} invoice{overdueList.length > 1 ? 's' : ''}.</span>
           <ArrowUpRight size={15} className="ml-auto shrink-0" />
@@ -192,7 +196,7 @@ export default function Dashboard() {
           </Card>
 
           <Card title="Recent invoices" bodyClass=""
-            action={<Link href={lists['/invoices'] ?? '/invoices'} className="btn-subtle btn-xs">View all <ArrowUpRight size={13} /></Link>}>
+            action={<Link href={lists['/app/invoices'] ?? '/app/invoices'} className="btn-subtle btn-xs">View all <ArrowUpRight size={13} /></Link>}>
             {invoices.length === 0 ? (
               <p className="px-5 py-6 text-[13px] text-chrome">No invoices yet — raise your first one, or ask the assistant below.</p>
             ) : (
@@ -201,7 +205,7 @@ export default function Dashboard() {
                   {invoices.slice(0, 6).map((i) => (
                     <tr key={i.id} className="row-link">
                       <td className="td">
-                        <Link href={`/invoices/${i.id}`} className="font-mono text-[13px] text-white">{i.invoice_number}</Link>
+                        <Link href={`/app/invoices/${i.id}`} className="font-mono text-[13px] text-white">{i.invoice_number}</Link>
                       </td>
                       <td className="td max-w-[180px] truncate text-[12.5px] text-[#C9CEDA]">
                         {clients.find((c) => c.id === i.client_id)?.company_name ?? '—'}
@@ -219,31 +223,30 @@ export default function Dashboard() {
         </div>
 
         <div className="space-y-4">
-          <Card title="Position this year">
+          {/* Deliberately only the figures the tiles above do not already show. */}
+          <Card title="Cash position" hint="Money already in, money still owed to you, and tax withheld by clients that you reclaim at year end.">
             <dl className="space-y-2.5 text-[13px]">
               {[
-                ['Billed (ex-GST)', money(books.billed), 'text-white'],
-                ['Collected', money(collected), 'text-emerald-300'],
-                ['Expenses (ex-GST)', money(books.expenseTaxable), 'text-amber-300'],
-                ['Net after expenses', money(books.netAfterExpenses), books.netAfterExpenses >= 0 ? 'text-white' : 'text-red-300'],
-                ['Typical payroll kit', money(books.typicalPayroll), 'text-chrome-light'],
-                ['Subscriptions / mo', money(books.subscriptionRunRate), 'text-chrome-light'],
-                ['TDS receivable', money(tdsReceivable), 'text-chrome-light'],
-                ['Outstanding', money(outstanding), outstanding > 0 ? 'text-amber-300' : 'text-chrome-light'],
-              ].map(([l, v, c]) => (
-                <div key={l} className="flex justify-between">
-                  <dt className="text-chrome">{l}</dt>
+                ['Collected', money(collected), 'text-emerald-300',
+                  'Payments actually banked this financial year.'],
+                ['Outstanding', money(outstanding), outstanding > 0 ? 'text-amber-300' : 'text-chrome-light',
+                  'Balance due across every live invoice, whether or not it is late yet.'],
+                ['Expenses (ex-GST)', money(books.expenseTaxable), 'text-chrome-light',
+                  'Company spend this year excluding GST, since the GST part comes back as input credit.'],
+                ['Subscriptions / mo', money(books.subscriptionRunRate), 'text-chrome-light',
+                  'Recurring vendor spend converted to a monthly run-rate. Paused subscriptions are excluded.'],
+                ['TDS receivable', money(tdsReceivable), 'text-chrome-light',
+                  'Tax clients withheld and paid to the Government on your behalf. You claim it back when you file.'],
+              ].map(([l, v, c, tip]) => (
+                <div key={l} className="flex items-center justify-between gap-2">
+                  <dt className="flex items-center gap-1.5 text-chrome">{l} <InfoHint tip={tip} /></dt>
                   <dd className={`font-mono tabular-nums ${c}`}>{v}</dd>
                 </div>
               ))}
             </dl>
-            <p className="mt-3 text-[11.5px] leading-relaxed text-chrome-dark">
-              Runway uses cash ÷ (full-kit payroll + subscription run-rate + trailing 3-month GST due avg
-              {books.runway.recipe.gstAvg ? ` ${moneyShort(books.runway.recipe.gstAvg)}` : ''}).
-            </p>
-            <div className="mt-4 grid grid-cols-2 gap-2 border-t border-line pt-3">
-              <Link href={lists['/expenses'] ?? '/expenses'} className="btn-ghost btn-sm"><Receipt size={14} /> Expenses</Link>
-              <Link href={lists['/gst'] ?? '/gst'} className="btn-ghost btn-sm"><Landmark size={14} /> GST</Link>
+            <div className="mt-4 grid grid-cols-2 gap-2 border-t border-line/80 pt-3">
+              <Link href={lists['/app/expenses'] ?? '/app/expenses'} className="btn-ghost btn-sm"><Receipt size={14} /> Expenses</Link>
+              <Link href={lists['/app/gst'] ?? '/app/gst'} className="btn-ghost btn-sm"><Landmark size={14} /> GST</Link>
             </div>
           </Card>
 
@@ -270,7 +273,7 @@ export default function Dashboard() {
               <ul className="divide-y divide-line">
                 {overdueList.slice(0, 5).map((i) => (
                   <li key={i.id}>
-                    <Link href={`/invoices/${i.id}`} className="flex items-center justify-between px-5 py-3 transition hover:bg-ink-600/60">
+                    <Link href={`/app/invoices/${i.id}`} className="flex items-center justify-between px-5 py-3 transition hover:bg-ink-600/60">
                       <div className="min-w-0">
                         <p className="font-mono text-[12.5px] text-white">{i.invoice_number}</p>
                         <p className="truncate text-[11.5px] text-chrome">
@@ -285,15 +288,6 @@ export default function Dashboard() {
             </Card>
           )}
 
-          <Card title="Quick actions">
-            <div className="grid gap-2">
-              <Link href="/invoices/new" className="btn-ghost w-full justify-start"><Plus size={14} /> Raise an invoice</Link>
-              <Link href={lists['/team'] ?? '/team'} className="btn-ghost w-full justify-start"><UsersRound size={14} /> Team payroll</Link>
-              <Link href="/recurring-expenses" className="btn-ghost w-full justify-start"><CreditCard size={14} /> Subscriptions</Link>
-              <Link href={lists['/expenses'] ?? '/expenses'} className="btn-ghost w-full justify-start"><Wallet size={14} /> Log an expense</Link>
-              <Link href="/recurring" className="btn-ghost w-full justify-start"><Repeat size={14} /> Manage retainers</Link>
-            </div>
-          </Card>
         </div>
       </div>
     </>

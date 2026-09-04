@@ -122,7 +122,7 @@ function ExpensesInner() {
     toast('Deleted'); load();
   }
 
-  const exportCsv = () => downloadCSV('buildablelabs-expenses.csv', [
+  const exportCsv = () => downloadCSV('expenses.csv', [
     ['Date', 'Vendor', 'Vendor GSTIN', 'Category', 'Bill no', 'HSN/SAC', 'Taxable', 'GST %', 'CGST', 'SGST', 'IGST', 'Total', 'ITC eligible', 'Mode', 'Reference'],
     ...filtered.map((r) => [r.expense_date, r.vendor_name, r.vendor_gstin, r.category, r.bill_number, r.code,
       r.taxable_amount, r.gst_rate, r.cgst_amount, r.sgst_amount, r.igst_amount, r.total_amount,

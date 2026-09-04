@@ -63,7 +63,7 @@ function ClientsInner() {
     return searched.filter((c) => tab === 'all' || c.status === tab);
   }, [searched, tab]);
 
-  const exportCsv = () => downloadCSV('buildablelabs-clients.csv', [
+  const exportCsv = () => downloadCSV('clients.csv', [
     ['Company', 'Contact', 'Email', 'Phone', 'GST treatment', 'GSTIN', 'Place of supply', 'Currency', 'Terms (days)', 'Billed (INR)', 'Outstanding (INR)'],
     ...filtered.map((c) => [c.company_name, c.contact_person, c.email, c.work_phone,
       c.gst_treatment, c.gstin, c.place_of_supply_state, c.currency, c.payment_terms_days,
@@ -142,7 +142,7 @@ function ClientsInner() {
                         </td>
                         <td className="td">
                           <div className="flex justify-end gap-1">
-                            <Link href={`/invoices/new?client=${c.id}`} className="btn-subtle btn-xs" title="New invoice"><FileText size={14} /></Link>
+                            <Link href={`/app/invoices/new?client=${c.id}`} className="btn-subtle btn-xs" title="New invoice"><FileText size={14} /></Link>
                             <button className="btn-subtle btn-xs" title="Edit"
                               onClick={() => { setEditing(c); setOpen(true); }}><Pencil size={14} /></button>
                           </div>

@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { sb } from './supabase/client';
+import { planById, type PlanId } from './product';
 import type { CatalogItem, Client, CompanyProfile } from './types';
 
 export function useProfile() {
@@ -53,4 +54,40 @@ export function useRows<T>(table: string, orderBy: string, ascending = false) {
   }, [table, orderBy, ascending]);
   useEffect(() => { load(); }, [load]);
   return { rows, loading, reload: load, setRows };
+}
+
+export type PlanState = {
+  plan: PlanId;
+  used: number;
+  /** null = unlimited */
+  limit: number | null;
+  left: number | null;
+};
+
+/**
+ * The free-plan meter. Read from the browser rather than the server route
+ * because the numbers behind it (profile plan, issued invoices) are already
+ * readable under RLS — no secrets involved.
+ */
+export function usePlanState() {
+  const [state, setState] = useState<PlanState | null>(null);
+  const load = useCallback(async () => {
+    const { data: profile } = await sb().from('company_profile').select('plan').eq('id', 1).maybeSingle();
+    const raw = (profile as { plan?: string } | null)?.plan;
+    const plan: PlanId = raw === 'pro' || raw === 'byo' ? raw : 'free';
+    const limit = planById(plan).invoicesPerMonth;
+    if (limit == null) return setState({ plan, used: 0, limit: null, left: null });
+
+    const from = new Date();
+    from.setDate(1);
+    const { count } = await sb().from('invoices')
+      .select('id', { count: 'exact', head: true })
+      .eq('doc_type', 'invoice')
+      .not('status', 'in', '("draft","cancelled")')
+      .gte('invoice_date', from.toISOString().slice(0, 10));
+    const used = count ?? 0;
+    setState({ plan, used, limit, left: Math.max(0, limit - used) });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  return { plan: state, reload: load };
 }

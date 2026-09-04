@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 import { createAdminSupabase, createServerSupabase } from '@/lib/supabase/server';
 import { renderInvoicePdf } from '@/lib/pdf/render';
 import { fmtDateLong, money } from '@/lib/format';
+import { PRODUCT } from '@/lib/product';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     const resend = new Resend(process.env.RESEND_API_KEY);
     const { error } = await resend.emails.send({
-      from: process.env.INVOICE_FROM_EMAIL ?? 'Buildable Labs <onboarding@resend.dev>',
+      from: process.env.INVOICE_FROM_EMAIL ?? `${PRODUCT.name} <onboarding@resend.dev>`,
       to: body.to.split(',').map((s) => s.trim()).filter(Boolean),
       cc: body.cc ? body.cc.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
       bcc: process.env.INVOICE_BCC_EMAIL || undefined,

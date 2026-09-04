@@ -429,7 +429,7 @@ export async function executeAssistantTool(
     if (error) throw error;
     return {
       result: data,
-      created: { kind: 'client', id: data.id, href: '/clients', title: data.company_name, subtitle: 'Client created' },
+      created: { kind: 'client', id: data.id, href: '/app/clients', title: data.company_name, subtitle: 'Client created' },
     };
   }
 
@@ -441,7 +441,7 @@ export async function executeAssistantTool(
       created: {
         kind: 'invoice',
         id: draft.id,
-        href: `/invoices/${draft.id}`,
+        href: `/app/invoices/${draft.id}`,
         title: draft.invoice_number,
         subtitle: draft.client_name,
         amount: money(draft.total, draft.currency),
@@ -488,7 +488,7 @@ export async function executeAssistantTool(
       created: {
         kind: 'expense',
         id: data.id,
-        href: '/expenses',
+        href: '/app/expenses',
         title: data.vendor_name,
         subtitle: currency === 'INR' ? 'Expense logged' : `Expense logged · ${currency}→INR ${fx.rate} as of ${fx.asOf}`,
         amount: money(Number(data.total_amount) * Number(data.exchange_rate || 1)),
@@ -529,7 +529,7 @@ export async function executeAssistantTool(
       created: {
         kind: 'gst',
         id: data.id,
-        href: '/gst',
+        href: '/app/gst',
         title: `${data.return_type} ${data.period}`,
         subtitle: Number(data.itc_utilised) > 0 ? `ITC credit ${money(Number(data.itc_utilised))}` : 'GST payment recorded',
         amount: money(Number(data.total_paid)),
@@ -582,7 +582,7 @@ export async function executeAssistantTool(
       created: {
         kind: 'retainer',
         id: data.id,
-        href: '/recurring',
+        href: '/app/recurring',
         title: data.title,
         subtitle: `${data.frequency} · next ${data.next_run_date}`,
         amount: money(Number(data.amount)),
@@ -611,7 +611,7 @@ export async function executeAssistantTool(
       result: { created: invoiceNumbers, failed, checked: profiles?.length ?? 0 },
       created: invoiceNumbers.length ? {
         kind: 'invoice' as const,
-        href: '/invoices',
+        href: '/app/invoices',
         title: invoiceNumbers.join(', '),
         subtitle: 'Retainer drafts generated',
       } : undefined,
@@ -629,7 +629,7 @@ export async function executeAssistantTool(
       created: {
         kind: 'status',
         id: updated.id,
-        href: `/invoices/${updated.id}`,
+        href: `/app/invoices/${updated.id}`,
         title: updated.invoice_number,
         subtitle: updated.status === 'paid' ? 'Marked paid' : 'Marked unpaid',
       },
@@ -652,7 +652,7 @@ export async function executeAssistantTool(
     if (error) throw error;
     return {
       result: { ...data, components },
-      created: { kind: 'team', id: data.id, href: '/team', title: data.name, subtitle: data.role || 'Teammate added' },
+      created: { kind: 'team', id: data.id, href: '/app/team', title: data.name, subtitle: data.role || 'Teammate added' },
     };
   }
 
@@ -678,7 +678,7 @@ export async function executeAssistantTool(
     if (error) throw error;
     return {
       result: { ...data, components },
-      created: { kind: 'team', id: data.id, href: '/team', title: data.name, subtitle: 'Teammate updated' },
+      created: { kind: 'team', id: data.id, href: '/app/team', title: data.name, subtitle: 'Teammate updated' },
     };
   }
 
@@ -705,7 +705,7 @@ export async function executeAssistantTool(
     return {
       result: { ...data, member: member.name, lines },
       created: {
-        kind: 'payroll', id: data.id, href: '/team', title: `${member.name} · ${period}`,
+        kind: 'payroll', id: data.id, href: '/app/team', title: `${member.name} · ${period}`,
         subtitle: 'Paycheck scores saved', amount: money(Number(data.total), member.currency),
       },
     };
@@ -734,7 +734,7 @@ export async function executeAssistantTool(
     return {
       result: { ...data, member: member.name, expense_id: exp.id },
       created: {
-        kind: 'payroll', id: data.id, href: '/expenses', title: `${member.name} · ${period} paid`,
+        kind: 'payroll', id: data.id, href: '/app/expenses', title: `${member.name} · ${period} paid`,
         subtitle: 'Salaries & Wages (no GST)', amount: money(Number(data.total), member.currency),
       },
     };
@@ -769,7 +769,7 @@ export async function executeAssistantTool(
     return {
       result: data,
       created: {
-        kind: 'subscription', id: data.id, href: '/recurring-expenses', title: data.title,
+        kind: 'subscription', id: data.id, href: '/app/recurring-expenses', title: data.title,
         subtitle: `${data.frequency} · next ${data.next_run_date}${currency === 'INR' ? '' : ` · ${currency}→INR ${fx.rate}`}`,
         amount: money(inr),
       },
@@ -795,7 +795,7 @@ export async function executeAssistantTool(
     return {
       result: { created: logged, failed, checked: recs?.length ?? 0 },
       created: logged.length ? {
-        kind: 'subscription' as const, href: '/expenses', title: logged.join(', '),
+        kind: 'subscription' as const, href: '/app/expenses', title: logged.join(', '),
         subtitle: 'Subscription expenses logged',
       } : undefined,
     };
@@ -811,7 +811,7 @@ export async function executeAssistantTool(
     return {
       result: { cash_on_hand: data.cash_on_hand },
       created: {
-        kind: 'cash', href: '/settings', title: amount === null ? 'Cash on hand cleared' : money(amount),
+        kind: 'cash', href: '/app/settings', title: amount === null ? 'Cash on hand cleared' : money(amount),
         subtitle: amount === null ? 'Runway will not be quoted until you set it' : 'Cash on hand updated',
       },
     };

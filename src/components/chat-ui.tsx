@@ -66,7 +66,7 @@ export function ChatBubbles({ msgs, busy, onOpenDraft, live }: {
               <CreatedCards items={[{
                 kind: 'invoice',
                 id: m.draft.id,
-                href: `/invoices/${m.draft.id}`,
+                href: `/app/invoices/${m.draft.id}`,
                 title: m.draft.invoice_number,
                 subtitle: m.draft.client_name,
                 amount: money(m.draft.total, m.draft.currency),

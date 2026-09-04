@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useState, useCallback } from 'react';
-import { X, Check, AlertTriangle, Info, Loader2 } from 'lucide-react';
+import { X, Check, AlertTriangle, Info, Loader2, ChevronDown, HelpCircle } from 'lucide-react';
 
 /* ------------------------------------------------------------------ toast */
 type ToastKind = 'success' | 'error' | 'info';
@@ -38,18 +38,108 @@ export function ToastHost() {
   );
 }
 
+/* --------------------------------------------------------------- tooltip */
+type TipSide = 'top' | 'bottom' | 'left' | 'right';
+const TIP_POS: Record<TipSide, string> = {
+  top: 'bottom-full left-1/2 -translate-x-1/2 mb-1.5',
+  bottom: 'top-full left-1/2 -translate-x-1/2 mt-1.5',
+  left: 'right-full top-1/2 -translate-y-1/2 mr-1.5',
+  right: 'left-full top-1/2 -translate-y-1/2 ml-1.5',
+};
+
+/** Hover/focus tooltip. CSS-driven, so it works without a portal or state. */
+export function Tooltip({ tip, side = 'top', children, className = '' }: {
+  tip: React.ReactNode; side?: TipSide; children: React.ReactNode; className?: string;
+}) {
+  return (
+    <span className={`tip-host relative inline-flex ${className}`} tabIndex={0}>
+      {children}
+      <span role="tooltip" className={`tip-bubble ${TIP_POS[side]}`}>{tip}</span>
+    </span>
+  );
+}
+
+/**
+ * The workhorse for de-cluttering: an ⓘ that holds the explanation a paragraph
+ * used to hold. Keyboard-reachable, so the copy is not hover-only.
+ */
+export function InfoHint({ tip, side = 'top', className = '' }: {
+  tip: React.ReactNode; side?: TipSide; className?: string;
+}) {
+  return (
+    <Tooltip tip={tip} side={side} className={className}>
+      <HelpCircle
+        size={12.5}
+        strokeWidth={2}
+        className="shrink-0 cursor-help text-chrome-dark transition-colors hover:text-chrome-light"
+        aria-label="More information"
+      />
+    </Tooltip>
+  );
+}
+
+/* -------------------------------------------------------------- collapse */
+/** Native <details> so it works before hydration and prints open if needed. */
+export function Collapse({ title, note, children, defaultOpen = false, className = '' }: {
+  title: React.ReactNode; note?: React.ReactNode; children: React.ReactNode;
+  defaultOpen?: boolean; className?: string;
+}) {
+  return (
+    <details open={defaultOpen} className={`card group ${className}`}>
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-3 text-[13px] font-semibold text-white [&::-webkit-details-marker]:hidden">
+        <ChevronDown size={14} className="shrink-0 text-chrome transition-transform group-open:rotate-180" />
+        {title}
+        {note && <span className="ml-auto text-[11.5px] font-normal text-chrome-dark">{note}</span>}
+      </summary>
+      <div className="border-t border-line/80 px-5 py-4">{children}</div>
+    </details>
+  );
+}
+
+/* ------------------------------------------------------------- stat tile */
+/**
+ * One number, one label, and the explanation tucked behind an ⓘ instead of
+ * sitting underneath as a third line of grey text.
+ */
+export function StatTile({ label, value, tone = 'text-white', hint, icon, href, foot }: {
+  label: string; value: React.ReactNode; tone?: string;
+  hint?: React.ReactNode; icon?: React.ReactNode; href?: string; foot?: React.ReactNode;
+}) {
+  const inner = (
+    <>
+      <div className="flex items-center gap-1.5">
+        <p className="label-mono truncate">{label}</p>
+        {hint && <InfoHint tip={hint} />}
+        {icon && <span className="ml-auto text-chrome-dark">{icon}</span>}
+      </div>
+      <p className={`mt-2 font-display text-[27px] leading-none tracking-[-0.015em] ${tone}`}>{value}</p>
+      {foot && <p className="mt-1.5 text-[11px] leading-snug text-chrome-dark">{foot}</p>}
+    </>
+  );
+  if (href) {
+    const Anchor = 'a' as const;
+    return <Anchor href={href} className="tile block transition hover:border-chrome-dark">{inner}</Anchor>;
+  }
+  return <div className="tile">{inner}</div>;
+}
+
 /* ------------------------------------------------------------------ card */
-export function Card({ title, subtitle, action, children, className = '', bodyClass = 'card-pad' }: {
-  title?: React.ReactNode; subtitle?: React.ReactNode; action?: React.ReactNode;
+export function Card({ title, subtitle, hint, action, children, className = '', bodyClass = 'card-pad' }: {
+  title?: React.ReactNode; subtitle?: React.ReactNode; hint?: React.ReactNode; action?: React.ReactNode;
   children: React.ReactNode; className?: string; bodyClass?: string;
 }) {
   return (
     <section className={`card ${className}`}>
       {(title || action) && (
-        <header className="flex items-start justify-between gap-3 border-b border-line px-5 py-3.5">
-          <div>
-            {title && <h2 className="text-[14px] font-bold text-white leading-tight">{title}</h2>}
-            {subtitle && <p className="mt-0.5 text-[12px] text-chrome">{subtitle}</p>}
+        <header className="flex items-start justify-between gap-3 border-b border-line/80 px-5 py-3">
+          <div className="min-w-0">
+            {title && (
+              <h2 className="flex items-center gap-1.5 text-[13px] font-bold leading-tight text-white">
+                {title}
+                {hint && <InfoHint tip={hint} />}
+              </h2>
+            )}
+            {subtitle && <p className="mt-0.5 text-[11.5px] text-chrome">{subtitle}</p>}
           </div>
           {action}
         </header>
@@ -60,14 +150,18 @@ export function Card({ title, subtitle, action, children, className = '', bodyCl
 }
 
 /* ------------------------------------------------------------------ field */
-export function Field({ label, hint, required, children, className = '' }: {
-  label?: string; hint?: React.ReactNode; required?: boolean; children: React.ReactNode; className?: string;
+export function Field({ label, hint, tip, required, children, className = '' }: {
+  label?: string; hint?: React.ReactNode;
+  /** Explanation behind an ⓘ next to the label — use this over `hint` for anything longer than a format example. */
+  tip?: React.ReactNode;
+  required?: boolean; children: React.ReactNode; className?: string;
 }) {
   return (
     <div className={className}>
       {label && (
-        <label className="field-label">
-          {label}{required && <span className="text-blue-300"> *</span>}
+        <label className="field-label flex items-center gap-1.5">
+          <span>{label}{required && <span className="text-blue-300"> *</span>}</span>
+          {tip && <InfoHint tip={tip} />}
         </label>
       )}
       {children}
@@ -196,30 +290,46 @@ export const StatusPill = ({ status }: { status: string }) => (
 );
 
 export function Tabs({ tabs, active, onChange }: {
-  tabs: { key: string; label: string; count?: number }[]; active: string; onChange: (k: string) => void;
+  tabs: { key: string; label: string; count?: number; icon?: React.ReactNode }[];
+  active: string; onChange: (k: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-1 rounded-lg border border-line bg-ink-800/60 p-1">
+    <div className="inline-flex flex-wrap items-center gap-0.5 rounded-[8px] border border-line bg-ink-800/60 p-[3px]">
       {tabs.map((t) => (
         <button key={t.key} onClick={() => onChange(t.key)}
-          className={`rounded-md px-3 py-1.5 text-[12.5px] font-semibold transition ${
-            active === t.key ? 'bg-ink-500 text-white shadow-sm' : 'text-chrome hover:text-white'}`}>
-          {t.label}
-          {t.count !== undefined && <span className="ml-1.5 text-[11px] text-chrome-dark">{t.count}</span>}
+          className={`flex items-center gap-1.5 rounded-[5px] px-2.5 py-[5px] text-[12px] font-semibold transition ${
+            active === t.key
+              ? 'bg-ink-500 text-white shadow-[0_1px_0_0_rgba(255,255,255,.08)_inset]'
+              : 'text-chrome hover:text-white'}`}>
+          {t.icon}{t.label}
+          {t.count !== undefined && <span className="text-[11px] font-normal text-chrome-dark">{t.count}</span>}
         </button>
       ))}
     </div>
   );
 }
 
-export function PageHeader({ title, subtitle, children }: {
-  title: string; subtitle?: string; children?: React.ReactNode;
+export function PageHeader({ title, subtitle, hint, meta, children }: {
+  title: string; subtitle?: string;
+  /** Long explanation — goes behind an ⓘ so the header stays one line. */
+  hint?: React.ReactNode;
+  /** Short factual chips (entity, FY, GSTIN) instead of a run-on subtitle. */
+  meta?: React.ReactNode[];
+  children?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 className="font-display text-[32px] leading-none text-white">{title}</h1>
-        {subtitle && <p className="mt-1.5 text-[13px] text-chrome">{subtitle}</p>}
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+      <div className="min-w-0">
+        <h1 className="flex items-center gap-2 font-display text-[29px] leading-none tracking-[-0.015em] text-white">
+          {title}
+          {hint && <InfoHint tip={hint} side="bottom" />}
+        </h1>
+        {subtitle && <p className="mt-1.5 text-[12.5px] text-chrome">{subtitle}</p>}
+        {meta && meta.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+            {meta.filter(Boolean).map((m, i) => <span key={i} className="chip">{m}</span>)}
+          </div>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-2">{children}</div>
     </div>

@@ -70,7 +70,7 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
   );
 
   return (
-    <Document title={`${invoice.invoice_number}`} author={profile?.legal_name ?? 'BuildableLabs LLP'}>
+    <Document title={`${invoice.invoice_number}`} author={profile?.legal_name ?? ''}>
       <Page size="A4" style={s.page}>
         {/* header */}
         <View style={s.between}>
@@ -255,7 +255,7 @@ export function InvoicePdfDoc({ invoice, lines, client, profile }: PdfProps) {
         </View>
 
         <Text style={s.footer} fixed>
-          {(profile?.trade_name ?? 'BUILDABLE LABS').toUpperCase()} · {(profile?.website ?? 'buildablelabs.com').replace(/^https?:\/\//, '')} · ANYTHING IS BUILDABLE
+          {(profile?.trade_name ?? profile?.legal_name ?? '').toUpperCase()} · {(profile?.website ?? 'buildablelabs.com').replace(/^https?:\/\//, '')} · ANYTHING IS BUILDABLE
         </Text>
       </Page>
     </Document>
