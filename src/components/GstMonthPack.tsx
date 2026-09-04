@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { CompanyProfile, Expense } from '@/lib/types';
 import {
-  SHARE_KIND_LABEL, llpAccountLabel, type MonthPack, type PackLine,
+  SHARE_KIND_LABEL, llpAccountLabel, packPaidLines, type MonthPack, type PackLine,
 } from '@/lib/gst-compliance';
 import { csvEscape, fmtDate, money, monthLabelLong } from '@/lib/format';
 import { fxInr } from '@/lib/finance';
@@ -73,7 +73,7 @@ function safeZipName(invoiceNumber: string, used: Set<string>) {
   return name;
 }
 
-async function zipIssuedInvoices(
+async function zipPaidInvoices(
   lines: PackLine[],
   periodKey: string,
   onProgress: (done: number, total: number) => void,
@@ -82,14 +82,14 @@ async function zipIssuedInvoices(
   const files: { name: string; data: Uint8Array }[] = [];
   const failed: string[] = [];
   const index = [[
-    'Invoice', 'Date', 'Client', 'GSTIN', 'Status', 'Taxable', 'GST', 'Total',
+    'Invoice', 'Invoice date', 'Payment received', 'Client', 'GSTIN', 'Status', 'Taxable', 'GST', 'Total',
   ]];
 
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     const name = safeZipName(l.invoice.invoice_number, used);
     index.push([
-      l.invoice.invoice_number, l.invoiceDate, l.clientName, l.gstin,
+      l.invoice.invoice_number, l.invoiceDate, l.collectedOn ?? '', l.clientName, l.gstin,
       STATUS_LABEL[l.invoice.status] ?? l.invoice.status,
       l.taxable.toFixed(2), l.tax.toFixed(2), l.total.toFixed(2),
     ]);
@@ -141,17 +141,18 @@ export default function GstMonthPack({
   const llp = llpAccountLabel(profile);
   const t = pack.totals;
   const hold = pack.issuedUnpaid.length + pack.earlierUnpaid.length;
+  const paidLines = packPaidLines(pack);
   const heading = /^\d{4}-\d{2}$/.test(pack.key) ? monthLabelLong(pack.key) : pack.label;
   const [zipProg, setZipProg] = useState<{ done: number; total: number } | null>(null);
 
   async function downloadZip() {
-    if (!pack.issued.length) return toast('No invoices were dated this period.', 'info');
+    if (!paidLines.length) return toast('No payments landed this period.', 'info');
     if (zipProg) return;
-    setZipProg({ done: 0, total: pack.issued.length });
+    setZipProg({ done: 0, total: paidLines.length });
     try {
-      const failed = await zipIssuedInvoices(pack.issued, pack.key, (done, total) => setZipProg({ done, total }));
+      const failed = await zipPaidInvoices(paidLines, pack.key, (done, total) => setZipProg({ done, total }));
       if (failed.length) toast(`Packed with ${failed.length} missing: ${failed.join(', ')}`, 'error');
-      else toast(`Packed ${pack.issued.length} invoice${pack.issued.length === 1 ? '' : 's'} for ${heading}`);
+      else toast(`Packed ${paidLines.length} paid invoice${paidLines.length === 1 ? '' : 's'} for ${heading}`);
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not pack invoices', 'error');
     } finally {
@@ -167,15 +168,15 @@ export default function GstMonthPack({
             <p className="label-mono">Filing period</p>
             <h2 className="mt-1 font-display text-[26px] leading-none text-white">{heading}</h2>
             <p className="mt-1.5 max-w-md text-[12.5px] leading-snug text-chrome">
-              Invoice PDFs dated this period, packed as one zip for the CA. Pick a past month if you missed the window.
+              Only invoices whose payment landed this month. GST is due on money in the bank, not on the invoice date.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="btn-primary btn-sm" onClick={downloadZip} disabled={!!zipProg || pack.issued.length === 0}>
+            <button className="btn-primary btn-sm" onClick={downloadZip} disabled={!!zipProg || paidLines.length === 0}>
               {zipProg ? <Spinner size={14} /> : <Archive size={14} />}
               {zipProg
                 ? `Packing ${zipProg.done}/${zipProg.total}…`
-                : `Download ${pack.issued.length} invoice${pack.issued.length === 1 ? '' : 's'}`}
+                : `Download ${paidLines.length} invoice${paidLines.length === 1 ? '' : 's'}`}
             </button>
             <button className="btn-ghost btn-sm" onClick={onCopy}><Copy size={14} /> Copy briefing</button>
             <button className="btn-ghost btn-sm" onClick={onCsv}><Download size={14} /> Pack CSV</button>
@@ -186,7 +187,7 @@ export default function GstMonthPack({
 
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            ['Invoices dated here', String(pack.issued.length), 'text-white'],
+            ['Paid invoices', String(paidLines.length), 'text-white'],
             ['Tax collected', money(t.output), 'text-white'],
             ['Claim back', money(t.itc), 'text-emerald-300'],
             ['Pay from company', money(t.netLlp), 'text-amber-300'],
@@ -198,23 +199,6 @@ export default function GstMonthPack({
           ))}
         </div>
       </header>
-
-      <Section
-        icon={<Archive size={15} />}
-        tone="bg-blue/15 text-blue-300"
-        title="Invoices dated this period — pack for the CA"
-        count={pack.issued.length}
-        empty="No invoices were dated this period.">
-        <LineTable
-          lines={pack.issued}
-          collectedLabel="Issued"
-          dateOf={(l) => l.invoiceDate}
-          extra={(l) => l.collectedOn ? (
-            <span className="mt-0.5 block text-[10.5px] text-chrome-dark">Paid {fmtDate(l.collectedOn)}</span>
-          ) : (
-            <span className="mt-0.5 block text-[10.5px] text-amber-200/80">Unpaid</span>
-          )} />
-      </Section>
 
       <Section
         icon={<Send size={15} />}

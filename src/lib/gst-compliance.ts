@@ -140,8 +140,6 @@ export type PackLine = {
 export type MonthPack = {
   key: string;
   label: string;
-  /** Every tax invoice dated in this period — the ZIP you send the CA. */
-  issued: PackLine[];
   share: PackLine[];
   zeroRated: PackLine[];
   partial: PackLine[];
@@ -176,9 +174,21 @@ function emptyTotals(): MonthPack['totals'] {
 function emptyPack(key: string, label: string): MonthPack {
   return {
     key, label,
-    issued: [], share: [], zeroRated: [], partial: [], issuedUnpaid: [], earlierUnpaid: [],
+    share: [], zeroRated: [], partial: [], issuedUnpaid: [], earlierUnpaid: [],
     itcExpenses: [], totals: emptyTotals(),
   };
+}
+
+/** Invoices with money in the bank this period — the zip and CSV for the CA. */
+export function packPaidLines(pack: MonthPack): PackLine[] {
+  const seen = new Set<string>();
+  const out: PackLine[] = [];
+  for (const l of [...pack.share, ...pack.zeroRated, ...pack.partial]) {
+    if (seen.has(l.invoice.id)) continue;
+    seen.add(l.invoice.id);
+    out.push(l);
+  }
+  return out;
 }
 
 function toLine(i: Invoice, clients: Client[], payments: Payment[], collected: string | null): PackLine {
@@ -225,11 +235,6 @@ export function buildGstPacks(opts: {
     const mine = payByInv.get(i.id) ?? [];
     const paidOn = collectedOn(i, mine);
     const packFor = (iso: string) => map.get(periodKeyOf(iso, periodType));
-
-    if (inFy(i.invoice_date)) {
-      const dated = packFor(i.invoice_date);
-      if (dated) dated.issued.push(toLine(i, clients, mine, paidOn));
-    }
 
     if (isFullyPaid(i) && paidOn && inFy(paidOn)) {
       const pack = packFor(paidOn);
@@ -310,8 +315,6 @@ export function buildGstPacks(opts: {
     t.outstandingGst = +t.outstandingGst.toFixed(2);
     t.netLlp = +Math.max(0, t.output - t.itc).toFixed(2);
     pack.totals = t;
-    pack.issued.sort((a, b) =>
-      a.invoiceDate.localeCompare(b.invoiceDate) || a.invoice.invoice_number.localeCompare(b.invoice.invoice_number));
   });
 
   return keys.map((k) => map.get(k)!);
@@ -398,8 +401,6 @@ export function packCsvRows(pack: MonthPack): (string | number | null)[][] {
   pack.share.forEach((l) => push('SHARE_AND_PAY', l, 'Payment received. Share with GST team. Remit GST from LLP account.'));
   pack.zeroRated.forEach((l) => push('SHARE_ZERO_RATED', l, 'Payment received. Share copies. No cash GST (LUT / exempt).'));
   pack.partial.forEach((l) => push('FLAG_PARTIAL', l, 'Part payment only. Confirm with GST team before remitting.', l.collectedThisPeriod));
-  pack.issuedUnpaid.forEach((l) => push('HOLD_UNPAID', l, 'Issued this period. Payment not received. Do not remit GST yet.', 0));
-  pack.earlierUnpaid.forEach((l) => push('HOLD_EARLIER', l, 'Still unpaid from an earlier period. Not this filing.', 0));
   return rows;
 }
 

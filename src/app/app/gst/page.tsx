@@ -39,7 +39,7 @@ const TIPS = {
   unpaid: 'GST sitting on invoices nobody has paid yet. Not due until they do.',
   cadence: 'Most firms file monthly on GSTR-3B. Quarterly is the QRMP scheme, for smaller turnovers.',
   split: 'Same GST, split by whether the client is in your state (CGST + SGST) or another (IGST). The CSV keeps the split for your CA.',
-  period: 'Pick any month — even a past one. If you missed sending August invoices to the CA, open August here in September and download the zip.',
+  period: 'Pick any month — even a past one. The zip and CSV only include invoices whose payment landed that month. Unpaid invoices stay out.',
 };
 
 export default function GstPage() {
@@ -222,7 +222,7 @@ function GstInner() {
         className="mb-5"
         title="This year"
         hint={TIPS.cadence}
-        subtitle="Pick a month above (or click a row). Download that month’s invoice PDFs as one zip for the CA — even if you are filing late."
+        subtitle="Pick a month above (or click a row). The zip and CSV are invoices paid that month — GST follows money in the bank, not the invoice date."
         action={
           <Tabs active={periodType} onChange={(k) => set('cadence', k)}
             tabs={[{ key: 'monthly', label: 'Monthly' }, { key: 'quarterly', label: 'Quarterly' }]} />
