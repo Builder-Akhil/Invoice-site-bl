@@ -25,7 +25,8 @@
   /* Serif display should sit tight and optically aligned, not airy. */
   .font-display { letter-spacing: -0.012em; }
   ::selection { background: #0B3FDE; color: #fff; }
-  input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(.7); cursor: pointer; }
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="month"]::-webkit-calendar-picker-indicator { filter: invert(.7); cursor: pointer; }
   ::-webkit-scrollbar { width: 9px; height: 9px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #262A33; border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }

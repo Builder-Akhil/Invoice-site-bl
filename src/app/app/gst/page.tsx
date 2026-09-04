@@ -7,7 +7,7 @@ import { useListFilters } from '@/lib/list-filters';
 import type { Expense, GstPayment, Invoice, Payment } from '@/lib/types';
 import { downloadCSV, financialYear, fmtDate, money, moneyShort, todayISO } from '@/lib/format';
 import {
-  buildGstPacks, gstr1CsvRows, llpAccountLabel, packCsvRows, packSummaryText, type MonthPack, type PeriodType,
+  buildGstPacks, fyStartForPeriodKey, gstr1CsvRows, llpAccountLabel, packCsvRows, packSummaryText, type MonthPack, type PeriodType,
 } from '@/lib/gst-compliance';
 import {
   Card, Collapse, EmptyState, Field, InfoHint, Input, Loading, Modal, PageHeader, Select, Tabs,
@@ -39,6 +39,7 @@ const TIPS = {
   unpaid: 'GST sitting on invoices nobody has paid yet. Not due until they do.',
   cadence: 'Most firms file monthly on GSTR-3B. Quarterly is the QRMP scheme, for smaller turnovers.',
   split: 'Same GST, split by whether the client is in your state (CGST + SGST) or another (IGST). The CSV keeps the split for your CA.',
+  period: 'Pick any month — even a past one. If you missed sending August invoices to the CA, open August here in September and download the zip.',
 };
 
 export default function GstPage() {
@@ -58,7 +59,7 @@ function GstInner() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [gstPayments, setGstPayments] = useState<GstPayment[]>([]);
   const [loading, setLoading] = useState(true);
-  const { values: filt, set } = useListFilters('gst', GST_FILTERS);
+  const { values: filt, set, patch } = useListFilters('gst', GST_FILTERS);
   const periodType = (filt.cadence === 'quarterly' ? 'quarterly' : 'monthly') as PeriodType;
   const fyStart = filt.fy;
   const selectedKey = filt.month;
@@ -107,6 +108,14 @@ function GstInner() {
   }, [packs, selectedKey, periodType, fyStart, set]);
 
   const pack = packs.find((b) => b.key === selectedKey) ?? packs[packs.length - 1] ?? null;
+
+  function selectPeriod(key: string) {
+    if (/^\d{4}-\d{2}$/.test(key)) {
+      patch({ month: key, fy: fyStartForPeriodKey(key) });
+      return;
+    }
+    set('month', key);
+  }
 
   const paidFor = (key: string) =>
     gstPayments.filter((g) => g.period === key)
@@ -170,9 +179,32 @@ function GstInner() {
           ytd.zero > 0 ? `exports ${moneyShort(ytd.zero)}` : null,
           ytd.outstanding > 0.5 ? `waiting on unpaid ${moneyShort(ytd.outstanding)}` : null,
         ].filter(Boolean) as string[]}>
-        <Select className="max-w-[140px]" value={fyStart} onChange={(e) => set('fy', e.target.value)}>
+        <Select className="max-w-[140px]" value={fyStart} onChange={(e) => set('fy', e.target.value)} aria-label="Financial year">
           {fyOptions.map((o) => <option key={o.start} value={o.start}>{o.label}</option>)}
         </Select>
+        {periodType === 'monthly' ? (
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1">
+              <span className="label-mono whitespace-nowrap">Month</span>
+              <InfoHint tip={TIPS.period} side="bottom" />
+            </span>
+            <Input
+              type="month"
+              className="w-[10.75rem]"
+              value={/^\d{4}-\d{2}$/.test(selectedKey) ? selectedKey : (pack?.key ?? '')}
+              onChange={(e) => { if (e.target.value) selectPeriod(e.target.value); }}
+              aria-label="Filing month"
+              title={TIPS.period}
+            />
+          </div>
+        ) : (
+          <label className="flex items-center gap-2">
+            <span className="label-mono whitespace-nowrap">Quarter</span>
+            <Select className="w-[9.5rem]" value={selectedKey} onChange={(e) => set('month', e.target.value)} aria-label="Filing quarter">
+              {packs.map((b) => <option key={b.key} value={b.key}>{b.label}</option>)}
+            </Select>
+          </label>
+        )}
         <button className="btn-primary" onClick={() => openRecord()}>
           <Plus size={15} /> Record payment
         </button>
@@ -190,7 +222,7 @@ function GstInner() {
         className="mb-5"
         title="This year"
         hint={TIPS.cadence}
-        subtitle="Click a period to open its pack."
+        subtitle="Pick a month above (or click a row). Download that month’s invoice PDFs as one zip for the CA — even if you are filing late."
         action={
           <Tabs active={periodType} onChange={(k) => set('cadence', k)}
             tabs={[{ key: 'monthly', label: 'Monthly' }, { key: 'quarterly', label: 'Quarterly' }]} />
@@ -224,7 +256,7 @@ function GstInner() {
                     const active = b.key === selectedKey;
                     return (
                       <tr key={b.key} className={`row-link ${active ? 'bg-blue/10' : ''}`}
-                        onClick={() => set('month', b.key)}>
+                        onClick={() => selectPeriod(b.key)}>
                         <td className="td">
                           <span className="font-semibold text-white">{b.label}</span>
                           {b.issuedUnpaid.length > 0 && (

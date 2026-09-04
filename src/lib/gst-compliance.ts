@@ -1,6 +1,6 @@
 import type { Client, CompanyProfile, Expense, Invoice, Payment } from './types';
 import { fxInr } from './finance';
-import { monthLabel, money, quarterOf } from './format';
+import { monthLabel, monthLabelLong, money, quarterOf } from './format';
 
 export type PeriodType = 'monthly' | 'quarterly';
 export type ShareKind = 'b2b' | 'b2c' | 'export_lut' | 'export_paid' | 'exempt';
@@ -48,6 +48,20 @@ export function labelForKey(key: string, periodType: PeriodType) {
   const month = q === 4 ? '01' : String(4 + (q - 1) * 3).padStart(2, '0');
   const year = q === 4 ? y + 1 : y;
   return quarterOf(`${year}-${month}-01`).label;
+}
+
+export function labelForKeyLong(key: string, periodType: PeriodType) {
+  if (periodType === 'monthly') return monthLabelLong(key);
+  return labelForKey(key, periodType);
+}
+
+/** Indian FY start (1 Apr) for a month key `2026-08` or quarter key `2026-Q2`. */
+export function fyStartForPeriodKey(key: string) {
+  if (/^\d{4}-Q[1-4]$/.test(key)) return `${key.slice(0, 4)}-04-01`;
+  const y = Number(key.slice(0, 4));
+  const m = Number(key.slice(5, 7));
+  if (!y || !m) return key;
+  return `${m >= 4 ? y : y - 1}-04-01`;
 }
 
 export function isZeroRated(i: Invoice) {
@@ -126,6 +140,8 @@ export type PackLine = {
 export type MonthPack = {
   key: string;
   label: string;
+  /** Every tax invoice dated in this period — the ZIP you send the CA. */
+  issued: PackLine[];
   share: PackLine[];
   zeroRated: PackLine[];
   partial: PackLine[];
@@ -160,7 +176,7 @@ function emptyTotals(): MonthPack['totals'] {
 function emptyPack(key: string, label: string): MonthPack {
   return {
     key, label,
-    share: [], zeroRated: [], partial: [], issuedUnpaid: [], earlierUnpaid: [],
+    issued: [], share: [], zeroRated: [], partial: [], issuedUnpaid: [], earlierUnpaid: [],
     itcExpenses: [], totals: emptyTotals(),
   };
 }
@@ -209,6 +225,11 @@ export function buildGstPacks(opts: {
     const mine = payByInv.get(i.id) ?? [];
     const paidOn = collectedOn(i, mine);
     const packFor = (iso: string) => map.get(periodKeyOf(iso, periodType));
+
+    if (inFy(i.invoice_date)) {
+      const dated = packFor(i.invoice_date);
+      if (dated) dated.issued.push(toLine(i, clients, mine, paidOn));
+    }
 
     if (isFullyPaid(i) && paidOn && inFy(paidOn)) {
       const pack = packFor(paidOn);
@@ -289,6 +310,8 @@ export function buildGstPacks(opts: {
     t.outstandingGst = +t.outstandingGst.toFixed(2);
     t.netLlp = +Math.max(0, t.output - t.itc).toFixed(2);
     pack.totals = t;
+    pack.issued.sort((a, b) =>
+      a.invoiceDate.localeCompare(b.invoiceDate) || a.invoice.invoice_number.localeCompare(b.invoice.invoice_number));
   });
 
   return keys.map((k) => map.get(k)!);
