@@ -1,12 +1,18 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const PUBLIC_PREFIXES = ['/login', '/i/', '/api/cron', '/auth', '/_next', '/favicon'];
+/**
+ * Only the signed-in product is gated. Everything else — the marketing site,
+ * the public invoice link, crawler files — must answer 200 to an anonymous
+ * request, or AI crawlers and Google index a login redirect instead of the page.
+ */
+const GATED_PREFIXES = ['/app', '/api/chat', '/api/integrations'];
 type CookieList = { name: string; value: string; options?: CookieOptions }[];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) return NextResponse.next();
+  const gated = GATED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  if (!gated) return NextResponse.next();
 
   let response = NextResponse.next({ request });
 
@@ -28,6 +34,9 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
+    }
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.searchParams.set('next', pathname);
@@ -37,5 +46,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'],
+  matcher: ['/app/:path*', '/api/chat/:path*', '/api/integrations/:path*'],
 };

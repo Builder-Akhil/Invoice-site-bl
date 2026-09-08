@@ -104,18 +104,20 @@ export default function SettingsPage() {
       )}
 
       {tab === 'cash' && (
-        <Card title="Cash on hand" subtitle="Fuel remaining in the tanks. Runway on the dashboard is cash ÷ (typical full-kit payroll + monthly subscriptions + trailing 3-month GST due). Leave blank if you have not counted it — we will not invent a number.">
+        <Card
+          title="Cash on hand"
+          subtitle="Drives the runway figure on your dashboard."
+          hint="Runway is this number divided by your real monthly burn — full-kit payroll + subscriptions + trailing 3-month average GST. Leave it blank and we show no runway rather than inventing one.">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Cash on hand (INR)" hint="Bank + wallets you treat as available. Update after each big in or out.">
+            <Field
+              label="Cash on hand (INR)"
+              hint="Bank + wallets you treat as available."
+              tip="Zero is a real answer — empty account. An empty field means “I have not counted yet”, and the assistant will refuse to quote a runway until you have.">
               <Input type="number" step="0.01" className="input-mono" placeholder="Not set"
                 value={f.cash_on_hand ?? ''}
                 onChange={(e) => set('cash_on_hand', e.target.value === '' ? null : Number(e.target.value))} />
             </Field>
           </div>
-          <p className="mt-4 rounded-lg border border-line bg-ink-800/50 px-4 py-3 text-[12.5px] leading-relaxed text-chrome">
-            Zero is a real number (empty tanks). Clearing the field means “I have not told you yet.”
-            Ask the assistant to quote runway only after this is current — like asking for remaining flight time after you read the fuel gauges.
-          </p>
         </Card>
       )}
 
@@ -210,7 +212,8 @@ export default function SettingsPage() {
 
       {tab === 'brand' && (
         <div className="grid gap-5 lg:grid-cols-2">
-          <Card title="Logo" subtitle="Top-right of every invoice and PDF. PNG or SVG, transparent background.">
+          <Card title="Logo" subtitle="Top-right of every invoice and PDF."
+            hint="PNG or SVG with a transparent background works best. Uploads are stored publicly so they can render inside emailed PDFs and on the client payment page. Remember to save after uploading.">
             <div className="flex items-center gap-5">
               <div className="grid h-24 w-24 shrink-0 place-items-center rounded-xl border border-line bg-white p-2">
                 <Image src={displayLogo(f.logo_url)} alt="Logo" width={80} height={80} className="max-h-20 w-auto object-contain" unoptimized />
@@ -225,7 +228,8 @@ export default function SettingsPage() {
             </div>
           </Card>
 
-          <Card title="Signature" subtitle="Appears above the authorised signatory line.">
+          <Card title="Signature" subtitle="Appears above the authorised signatory line."
+            hint="A PNG of your signature on a transparent background. Like the logo, it is stored publicly so it can print on client-facing PDFs.">
             <div className="flex items-center gap-5">
               <div className="grid h-24 w-40 shrink-0 place-items-center rounded-xl border border-line bg-white p-2">
                 {f.signature_url
@@ -242,10 +246,6 @@ export default function SettingsPage() {
             </div>
           </Card>
 
-          <p className="lg:col-span-2 rounded-lg border border-line bg-ink-800/50 px-4 py-3 text-[12px] leading-relaxed text-chrome">
-            Logo and signature live in a public storage locker named <span className="font-mono text-chrome-light">brand</span>
-            so they print on invoices and PDFs. After you upload, click <strong className="text-white">Save changes</strong>.
-          </p>
         </div>
       )}
     </>

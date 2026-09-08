@@ -102,7 +102,7 @@ export default function DocumentList({ docType }: { docType: DocType }) {
     } finally { setSettling(null); }
   }
 
-  const exportCsv = () => downloadCSV(`buildablelabs-${docType}s.csv`, [
+  const exportCsv = () => downloadCSV(`${docType}s.csv`, [
     ['Number', 'Date', 'Due', 'Client', 'Status', 'Currency', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total', 'TDS', 'Net expected (bank)', 'Received', 'Balance', 'Place of supply', 'GSTIN'],
     ...filtered.map((r) => {
       const c = clients.find((x) => x.id === r.client_id);
@@ -117,7 +117,7 @@ export default function DocumentList({ docType }: { docType: DocType }) {
       <PageHeader title={docType === 'quote' ? 'Quotes' : 'Invoices'}
         subtitle={docType === 'quote' ? 'Send an estimate, convert it to an invoice in one click.' : 'Net expected is what should hit the LLP bank after TDS — tick it off the statement, then record the payment.'}>
         <button className="btn-ghost" onClick={exportCsv}><Download size={15} /> CSV</button>
-        <Link href={`/invoices/new${docType === 'quote' ? '?type=quote' : ''}`} className="btn-primary">
+        <Link href={`/app/invoices/new${docType === 'quote' ? '?type=quote' : ''}`} className="btn-primary">
           <Plus size={15} /> New {label.toLowerCase()}
         </Link>
       </PageHeader>
@@ -169,7 +169,7 @@ export default function DocumentList({ docType }: { docType: DocType }) {
           : filtered.length === 0 ? (
             <EmptyState icon={<FileText size={18} />} title={`No ${label.toLowerCase()}s here`}
               body="Raise one from scratch, or describe it to the assistant at the bottom of the screen."
-              action={<Link href={`/invoices/new${docType === 'quote' ? '?type=quote' : ''}`} className="btn-primary"><Plus size={15} /> New {label.toLowerCase()}</Link>} />
+              action={<Link href={`/app/invoices/new${docType === 'quote' ? '?type=quote' : ''}`} className="btn-primary"><Plus size={15} /> New {label.toLowerCase()}</Link>} />
           ) : (
             <div className="scroll-x">
               <table className="w-full min-w-[960px]">
@@ -185,12 +185,12 @@ export default function DocumentList({ docType }: { docType: DocType }) {
                   {filtered.map((r) => (
                     <tr key={r.id} className="row-link">
                       <td className="td">
-                        <Link href={`/invoices/${r.id}`} className="block">
+                        <Link href={`/app/invoices/${r.id}`} className="block">
                           <span className="font-mono text-[13px] font-semibold text-white">{r.invoice_number}</span>
                           {r.subject && <span className="mt-0.5 block max-w-[240px] truncate text-[11.5px] text-chrome">{r.subject}</span>}
                         </Link>
                       </td>
-                      <td className="td"><Link href={`/invoices/${r.id}`} className="text-[13px] text-[#C9CEDA]">{clientName(r.client_id)}</Link></td>
+                      <td className="td"><Link href={`/app/invoices/${r.id}`} className="text-[13px] text-[#C9CEDA]">{clientName(r.client_id)}</Link></td>
                       <td className="td text-[12.5px] text-chrome">{fmtDate(r.invoice_date)}</td>
                       <td className={`td text-[12.5px] ${r.status === 'overdue' ? 'text-red-300' : 'text-chrome'}`}>{fmtDate(r.due_date)}</td>
                       <td className="td">

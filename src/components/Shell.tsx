@@ -4,26 +4,28 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, FileText, Users, Package, Receipt, Repeat, Landmark,
-  Settings, LogOut, FileSignature, Menu, X, MessageSquare, UsersRound, CreditCard,
+  Settings, LogOut, FileSignature, Menu, X, MessageSquare, UsersRound, CreditCard, Plug,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
 import { useFilterNav } from '@/lib/list-filters';
+import { usePlanState } from '@/lib/hooks';
+import { PRODUCT } from '@/lib/product';
 import { Wordmark } from './Logo';
 import { ToastHost } from './ui';
 import ChatBar from './ChatBar';
 
 const NAV = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/chats', label: 'Chats', icon: MessageSquare },
-  { href: '/invoices', label: 'Invoices', icon: FileText },
-  { href: '/quotes', label: 'Quotes', icon: FileSignature },
-  { href: '/clients', label: 'Clients', icon: Users },
-  { href: '/team', label: 'Team', icon: UsersRound },
-  { href: '/items', label: 'Services', icon: Package },
-  { href: '/recurring', label: 'Retainers', icon: Repeat },
-  { href: '/recurring-expenses', label: 'Subscriptions', icon: CreditCard },
-  { href: '/expenses', label: 'Expenses', icon: Receipt },
-  { href: '/gst', label: 'GST & Tax', icon: Landmark },
+  { href: '/app', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/app/chats', label: 'Chats', icon: MessageSquare },
+  { href: '/app/invoices', label: 'Invoices', icon: FileText },
+  { href: '/app/quotes', label: 'Quotes', icon: FileSignature },
+  { href: '/app/clients', label: 'Clients', icon: Users },
+  { href: '/app/team', label: 'Team', icon: UsersRound },
+  { href: '/app/items', label: 'Services', icon: Package },
+  { href: '/app/recurring', label: 'Retainers', icon: Repeat },
+  { href: '/app/recurring-expenses', label: 'Subscriptions', icon: CreditCard },
+  { href: '/app/expenses', label: 'Expenses', icon: Receipt },
+  { href: '/app/gst', label: 'GST & Tax', icon: Landmark },
 ];
 
 export default function Shell({ children }: { children: React.ReactNode }) {
@@ -32,6 +34,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [email, setEmail] = useState('');
   const [open, setOpen] = useState(false);
   const navHref = useFilterNav();
+  const { plan } = usePlanState();
 
   useEffect(() => {
     sb().auth.getUser().then(({ data }) => setEmail(data.user?.email ?? ''));
@@ -40,11 +43,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => { await sb().auth.signOut(); router.push('/login'); router.refresh(); };
   const isActive = (href: string) => {
-    if (href === '/') return pathname === '/';
-    if (href === '/recurring') return pathname === '/recurring';
+    if (href === '/app') return pathname === '/app';
+    if (href === '/app/recurring') return pathname === '/app/recurring';
     return pathname.startsWith(href);
   };
-  const hideChat = pathname.startsWith('/chats');
+  const hideChat = pathname.startsWith('/app/chats');
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[236px_1fr]">
@@ -54,7 +57,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                          ${open ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex h-full flex-col">
           <div className="flex items-center justify-between px-4 py-4">
-            <Link href="/"><Wordmark /></Link>
+            <Link href="/app"><Wordmark /></Link>
             <button className="btn-subtle btn-xs lg:hidden" onClick={() => setOpen(false)}><X size={16} /></button>
           </div>
 
@@ -67,15 +70,39 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </Link>
             ))}
             <p className="label-mono px-3 pb-1.5 pt-5">Organisation</p>
-            <Link href="/settings" className={`nav-item ${isActive('/settings') ? 'nav-item-active' : ''}`}>
+            <Link href="/app/integrations" className={`nav-item ${isActive('/app/integrations') ? 'nav-item-active' : ''}`}>
+              <Plug size={16} strokeWidth={1.6} /> Integrations
+            </Link>
+            <Link href="/app/settings" className={`nav-item ${isActive('/app/settings') ? 'nav-item-active' : ''}`}>
               <Settings size={16} strokeWidth={1.6} /> Profile & Settings
             </Link>
           </nav>
 
+          {plan && plan.limit != null && (
+            <div className="mx-3 mb-2 rounded-[8px] border border-line bg-ink-700/50 px-3 py-2.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="label-mono">Free plan</span>
+                <span className="font-mono text-[11px] text-chrome-light">{plan.used}/{plan.limit}</span>
+              </div>
+              <div className="mt-2 h-1 overflow-hidden rounded-full bg-ink-400">
+                <div
+                  className={`h-full rounded-full transition-all ${plan.left === 0 ? 'bg-amber-400' : 'bg-blue'}`}
+                  style={{ width: `${Math.min(100, (plan.used / plan.limit) * 100)}%` }}
+                />
+              </div>
+              <p className="mt-2 text-[10.5px] leading-snug text-chrome-dark">
+                {plan.left === 0
+                  ? 'Cap reached. Drafts stay free.'
+                  : `${plan.left} invoice${plan.left === 1 ? '' : 's'} left this month`}
+              </p>
+              <Link href="/#pricing" className="btn-primary btn-xs mt-2 w-full">Upgrade to Pro</Link>
+            </div>
+          )}
+
           <div className="border-t border-line px-3 py-3">
             <div className="truncate px-2 text-[11.5px] text-chrome" title={email}>{email || '—'}</div>
             <button onClick={signOut} className="nav-item mt-1 w-full"><LogOut size={16} strokeWidth={1.6} /> Sign out</button>
-            <p className="label-mono px-2 pt-2 text-[9px] text-chrome-dark">ANYTHING IS BUILDABLE</p>
+            <p className="label-mono px-2 pt-2 text-[9px] text-chrome-dark">{PRODUCT.name.toUpperCase()} · ANYTHING IS BUILDABLE</p>
           </div>
         </div>
       </aside>

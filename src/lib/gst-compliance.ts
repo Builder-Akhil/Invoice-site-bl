@@ -1,6 +1,6 @@
 import type { Client, CompanyProfile, Expense, Invoice, Payment } from './types';
 import { fxInr } from './finance';
-import { monthLabel, money, quarterOf } from './format';
+import { monthLabel, monthLabelLong, money, quarterOf } from './format';
 
 export type PeriodType = 'monthly' | 'quarterly';
 export type ShareKind = 'b2b' | 'b2c' | 'export_lut' | 'export_paid' | 'exempt';
@@ -48,6 +48,20 @@ export function labelForKey(key: string, periodType: PeriodType) {
   const month = q === 4 ? '01' : String(4 + (q - 1) * 3).padStart(2, '0');
   const year = q === 4 ? y + 1 : y;
   return quarterOf(`${year}-${month}-01`).label;
+}
+
+export function labelForKeyLong(key: string, periodType: PeriodType) {
+  if (periodType === 'monthly') return monthLabelLong(key);
+  return labelForKey(key, periodType);
+}
+
+/** Indian FY start (1 Apr) for a month key `2026-08` or quarter key `2026-Q2`. */
+export function fyStartForPeriodKey(key: string) {
+  if (/^\d{4}-Q[1-4]$/.test(key)) return `${key.slice(0, 4)}-04-01`;
+  const y = Number(key.slice(0, 4));
+  const m = Number(key.slice(5, 7));
+  if (!y || !m) return key;
+  return `${m >= 4 ? y : y - 1}-04-01`;
 }
 
 export function isZeroRated(i: Invoice) {
@@ -163,6 +177,18 @@ function emptyPack(key: string, label: string): MonthPack {
     share: [], zeroRated: [], partial: [], issuedUnpaid: [], earlierUnpaid: [],
     itcExpenses: [], totals: emptyTotals(),
   };
+}
+
+/** Invoices with money in the bank this period — the zip and CSV for the CA. */
+export function packPaidLines(pack: MonthPack): PackLine[] {
+  const seen = new Set<string>();
+  const out: PackLine[] = [];
+  for (const l of [...pack.share, ...pack.zeroRated, ...pack.partial]) {
+    if (seen.has(l.invoice.id)) continue;
+    seen.add(l.invoice.id);
+    out.push(l);
+  }
+  return out;
 }
 
 function toLine(i: Invoice, clients: Client[], payments: Payment[], collected: string | null): PackLine {
@@ -375,8 +401,6 @@ export function packCsvRows(pack: MonthPack): (string | number | null)[][] {
   pack.share.forEach((l) => push('SHARE_AND_PAY', l, 'Payment received. Share with GST team. Remit GST from LLP account.'));
   pack.zeroRated.forEach((l) => push('SHARE_ZERO_RATED', l, 'Payment received. Share copies. No cash GST (LUT / exempt).'));
   pack.partial.forEach((l) => push('FLAG_PARTIAL', l, 'Part payment only. Confirm with GST team before remitting.', l.collectedThisPeriod));
-  pack.issuedUnpaid.forEach((l) => push('HOLD_UNPAID', l, 'Issued this period. Payment not received. Do not remit GST yet.', 0));
-  pack.earlierUnpaid.forEach((l) => push('HOLD_EARLIER', l, 'Still unpaid from an earlier period. Not this filing.', 0));
   return rows;
 }
 

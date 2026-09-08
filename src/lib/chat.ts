@@ -26,7 +26,7 @@ export function normalizeCreated(raw: unknown): ChatCreated[] {
       out.push({
         kind: 'invoice',
         id: d.id,
-        href: `/invoices/${d.id}`,
+        href: `/app/invoices/${d.id}`,
         title: d.invoice_number,
         subtitle: d.client_name,
         invoice_number: d.invoice_number,
@@ -59,12 +59,29 @@ export function dbMessagesToChat(rows: ConversationMessage[]): ChatMsg[] {
   });
 }
 
+export type ChatEngine = { provider: string; label: string; model: string; key: 'byo' | 'platform' };
+
+/**
+ * A refusal the user can act on: a plan limit or a missing key, as opposed to
+ * something going wrong. The chat UI offers the matching link instead of just
+ * printing red text.
+ */
+export class ChatActionable extends Error {
+  constructor(message: string, public action: 'upgrade' | 'integrations') {
+    super(message);
+    this.name = 'ChatActionable';
+  }
+}
+
 export async function sendChat(args: {
   message: string;
   history: { role: 'user' | 'assistant'; content: string }[];
   conversationId?: string | null;
   images?: ChatAttachment[];
-}): Promise<{ reply: string; draft: ChatDraft | null; created: ChatCreated[]; conversation_id: string }> {
+}): Promise<{
+  reply: string; draft: ChatDraft | null; created: ChatCreated[]; conversation_id: string;
+  engine: ChatEngine | null; notice: string | null;
+}> {
   const images = (args.images ?? []).map(({ media_type, data }) => ({ media_type, data }));
   const res = await fetch('/api/chat', {
     method: 'POST',
@@ -77,12 +94,19 @@ export async function sendChat(args: {
     }),
   });
   const j = await res.json();
-  if (!res.ok) throw new Error(j.error ?? 'Assistant failed');
+  if (!res.ok) {
+    const msg = j.error ?? 'Assistant failed';
+    if (j.upgrade) throw new ChatActionable(msg, 'upgrade');
+    if (j.integrations) throw new ChatActionable(msg, 'integrations');
+    throw new Error(msg);
+  }
   return {
     reply: j.reply,
     draft: j.draft ?? null,
     created: normalizeCreated(j.created ?? j.draft),
     conversation_id: j.conversation_id,
+    engine: (j.engine ?? null) as ChatEngine | null,
+    notice: (j.notice ?? null) as string | null,
   };
 }
 

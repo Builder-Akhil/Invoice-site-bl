@@ -165,7 +165,7 @@ export default function InvoiceEditor({ docType, invoiceId, presetClientId }: {
         lines, autoNumber, roundOff,
       });
       toast(invoiceId ? 'Saved' : `${docType === 'quote' ? 'Quote' : 'Invoice'} created`);
-      router.push(`/invoices/${id}`);
+      router.push(`/app/invoices/${id}`);
       router.refresh();
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not save', 'error');

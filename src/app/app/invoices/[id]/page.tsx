@@ -109,7 +109,7 @@ export default function InvoiceDetail({ params }: { params: { id: string } }) {
       }).select('id').single();
       if (error) throw error;
       await sb().from('invoice_items').insert((invoice_items ?? []).map(({ id: _i, ...l }) => ({ ...l, invoice_id: data.id })));
-      toast(`Created ${number}`); router.push(`/invoices/${data.id}`);
+      toast(`Created ${number}`); router.push(`/app/invoices/${data.id}`);
     } catch (e) { toast(e instanceof Error ? e.message : 'Could not duplicate', 'error'); }
     finally { setBusy(''); }
   }
@@ -128,7 +128,7 @@ export default function InvoiceDetail({ params }: { params: { id: string } }) {
       if (error) throw error;
       await sb().from('invoice_items').insert((invoice_items ?? []).map(({ id: _i, ...l }) => ({ ...l, invoice_id: data.id })));
       await sb().from('invoices').update({ status: 'accepted' }).eq('id', id);
-      toast(`Invoice ${number} created`); router.push(`/invoices/${data.id}`);
+      toast(`Invoice ${number} created`); router.push(`/app/invoices/${data.id}`);
     } catch (e) { toast(e instanceof Error ? e.message : 'Could not convert', 'error'); }
     finally { setBusy(''); }
   }
@@ -151,7 +151,7 @@ export default function InvoiceDetail({ params }: { params: { id: string } }) {
     if (!(await confirm(`Permanently delete ${inv!.invoice_number}? For GST records, cancelling is usually safer than deleting.`))) return;
     const { error } = await sb().from('invoices').delete().eq('id', inv!.id);
     if (error) return toast(error.message, 'error');
-    toast('Deleted'); router.push(isQuote ? '/quotes' : '/invoices');
+    toast('Deleted'); router.push(isQuote ? '/app/quotes' : '/app/invoices');
   }
 
   const balance = Number(inv.balance_due);
@@ -162,7 +162,7 @@ export default function InvoiceDetail({ params }: { params: { id: string } }) {
       <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <Link
-            href={lists[isQuote ? '/quotes' : '/invoices'] ?? (isQuote ? '/quotes' : '/invoices')}
+            href={lists[isQuote ? '/app/quotes' : '/app/invoices'] ?? (isQuote ? '/app/quotes' : '/app/invoices')}
             className="mb-2 inline-flex items-center gap-1.5 text-[12.5px] text-chrome hover:text-white">
             <ArrowLeft size={14} /> {isQuote ? 'Quotes' : 'Invoices'}
           </Link>
@@ -177,7 +177,7 @@ export default function InvoiceDetail({ params }: { params: { id: string } }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Link href={`/invoices/${inv.id}/edit`} className="btn-ghost"><Pencil size={15} /> Edit</Link>
+          <Link href={`/app/invoices/${inv.id}/edit`} className="btn-ghost"><Pencil size={15} /> Edit</Link>
           <button className="btn-ghost" onClick={() => window.print()}><Printer size={15} /> Print</button>
           <button className="btn-ghost" onClick={() => window.open(`/api/invoices/${inv.id}/pdf`, '_blank')}><Download size={15} /> PDF</button>
           <button className="btn-ghost" onClick={() => { navigator.clipboard.writeText(publicUrl); toast('Share link copied'); }}>

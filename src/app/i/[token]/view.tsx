@@ -20,7 +20,7 @@ export default function PublicInvoiceView({ invoice, lines, client, profile, tok
           <div className="flex items-center gap-3">
             <LogoMark size={26} />
             <div className="leading-tight">
-              <p className="text-[13.5px] font-bold text-white">{profile?.trade_name ?? 'Buildable Labs'}</p>
+              <p className="text-[13.5px] font-bold text-white">{profile?.trade_name ?? profile?.legal_name ?? ''}</p>
               <p className="label-mono mt-0.5 text-[9px]">{isQuote ? 'QUOTATION' : 'TAX INVOICE'} · {invoice.invoice_number}</p>
             </div>
           </div>

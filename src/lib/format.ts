@@ -88,6 +88,11 @@ export function monthLabel(key: string) {
   const [y, m] = key.split('-').map(Number);
   return new Date(y, m - 1, 1).toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
 }
+export function monthLabelLong(key: string) {
+  const [y, m] = key.split('-').map(Number);
+  if (!y || !m) return key;
+  return new Date(y, m - 1, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+}
 
 /** Indian financial year: 1 Apr – 31 Mar. Returns { label:'FY 2026-27', start, end } */
 export function financialYear(iso = todayISO(), startMonth = 4) {
