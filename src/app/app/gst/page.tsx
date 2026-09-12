@@ -1,6 +1,6 @@
 'use client';
 import { Suspense, useEffect, useMemo, useState } from 'react';
-import { Landmark, Plus, Trash2, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Landmark, Plus, Trash2, CheckCircle2, AlertTriangle, Archive } from 'lucide-react';
 import { sb } from '@/lib/supabase/client';
 import { useClients, useProfile } from '@/lib/hooks';
 import { useListFilters } from '@/lib/list-filters';
@@ -14,6 +14,11 @@ import {
   Textarea, Tooltip, StatTile, toast, useConfirm, Spinner,
 } from '@/components/ui';
 import GstMonthPack, { copyPack } from '@/components/GstMonthPack';
+import GstExportDialog from '@/components/GstExportDialog';
+import {
+  exportCsvText, exportFilename, selectExportLines, zipInvoices, type ExportBasis,
+} from '@/lib/gst-export';
+import { downloadBlob } from '@/lib/zip';
 
 const blankPayment = (period: string): Partial<GstPayment> => ({
   period, period_type: 'monthly', return_type: 'GSTR-3B', paid_on: todayISO(),
@@ -24,6 +29,9 @@ const GST_FILTERS = {
   cadence: 'monthly',
   fy: financialYear().start,
   month: todayISO().slice(0, 7),
+  // Which date a download is measured by. Exports only — the tax arithmetic on
+  // this page is always cash-basis, because that is when GST is actually due.
+  basis: 'paid',
 };
 
 /**
@@ -66,6 +74,9 @@ function GstInner() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [p, setP] = useState<Partial<GstPayment>>(blankPayment(todayISO().slice(0, 7)));
+  const [exportOpen, setExportOpen] = useState(false);
+  const basis = (filt.basis === 'raised' ? 'raised' : 'paid') as ExportBasis;
+  const [zipProg, setZipProg] = useState<{ done: number; total: number } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -130,6 +141,35 @@ function GstInner() {
     share: a.share + b.totals.shareCount,
     outstanding: a.outstanding + b.issuedUnpaid.reduce((s, l) => s + l.tax, 0),
   }), { output: 0, itc: 0, net: 0, paid: 0, zero: 0, share: 0, outstanding: 0 });
+
+  /** The invoices the current period's download would contain, on the active basis. */
+  const periodLines = useMemo(
+    () => (selectedKey
+      ? selectExportLines({ invoices, payments, clients, keys: [selectedKey], basis, periodType })
+      : []),
+    [invoices, payments, clients, selectedKey, basis, periodType],
+  );
+
+  async function downloadPeriod() {
+    if (!periodLines.length || zipProg) return;
+    setZipProg({ done: 0, total: periodLines.length });
+    try {
+      const failed = await zipInvoices(
+        periodLines.map((l) => ({ invoiceId: l.invoice.id, invoiceNumber: l.invoice.invoice_number })),
+        {
+          filename: exportFilename([selectedKey], basis, 'zip'),
+          indexCsv: exportCsvText(periodLines, basis),
+          onProgress: (done, total) => setZipProg({ done, total }),
+        },
+      );
+      if (failed.length) toast(`Packed, but ${failed.length} PDF${failed.length === 1 ? '' : 's'} failed: ${failed.join(', ')}`, 'error');
+      else toast(`Packed ${periodLines.length} invoice${periodLines.length === 1 ? '' : 's'}`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not pack invoices', 'error');
+    } finally {
+      setZipProg(null);
+    }
+  }
 
   function openRecord(from?: MonthPack) {
     const src = from ?? pack;
@@ -205,6 +245,9 @@ function GstInner() {
             </Select>
           </label>
         )}
+        <button className="btn-ghost" onClick={() => setExportOpen(true)} title="Pick months and a date basis, then download one zip">
+          <Archive size={15} /> Download for CA
+        </button>
         <button className="btn-primary" onClick={() => openRecord()}>
           <Plus size={15} /> Record payment
         </button>
@@ -289,8 +332,26 @@ function GstInner() {
           <GstMonthPack
             pack={pack}
             profile={profile}
+            basis={basis}
+            onBasisChange={(b) => set('basis', b)}
+            downloadCount={periodLines.length}
+            zipProgress={zipProg}
+            onDownload={downloadPeriod}
+            onMoreMonths={() => setExportOpen(true)}
             onCopy={() => copyPack(packSummaryText(pack, profile))}
-            onCsv={() => downloadCSV(`GST-pack-${pack.key}.csv`, packCsvRows(pack))}
+            onCsv={() => {
+              // The GST pack sheet only makes sense on the paid basis — it is built
+              // around money received. On the invoice-date basis, hand over the
+              // plain turnover sheet instead of a mislabelled GST pack.
+              if (basis === 'paid') {
+                downloadCSV(`GST-pack-${pack.key}.csv`, packCsvRows(pack));
+                return;
+              }
+              downloadBlob(
+                exportFilename([selectedKey], basis, 'csv'),
+                new Blob([exportCsvText(periodLines, basis)], { type: 'text/csv;charset=utf-8' }),
+              );
+            }}
             onGstr1={() => downloadCSV(`GSTR1-${pack.key}.csv`, gstr1CsvRows(pack, clients))}
             onRecord={() => openRecord(pack)}
           />
@@ -391,6 +452,17 @@ function GstInner() {
           </div>
         </Collapse>
       </Modal>
+      <GstExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        invoices={invoices}
+        payments={payments}
+        clients={clients}
+        periodType={periodType}
+        initialKeys={selectedKey ? [selectedKey] : []}
+        initialBasis={basis}
+        onBasisChange={(b) => set('basis', b)}
+      />
       {confirmNode}
     </>
   );

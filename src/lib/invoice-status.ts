@@ -104,3 +104,12 @@ export async function setInvoicePaidStatus(
   if (error) throw error;
   return data as Invoice;
 }
+
+/**
+ * Display names for document statuses. Lives here rather than in the UI kit so
+ * data modules (CSV and zip exports) can label a row without pulling React in.
+ */
+export const STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft', sent: 'Sent', viewed: 'Viewed', partially_paid: 'Part paid',
+  paid: 'Paid', overdue: 'Overdue', cancelled: 'Cancelled', accepted: 'Accepted', declined: 'Declined',
+};

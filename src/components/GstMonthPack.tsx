@@ -1,17 +1,17 @@
 'use client';
 import Link from 'next/link';
-import { useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import {
-  Archive, Ban, Building2, CheckCircle2, Copy, Download, FileText, Landmark, Send, Wallet,
+  Archive, Ban, Building2, CalendarPlus, CheckCircle2, Copy, Download, FileText, Landmark, Send, Wallet,
 } from 'lucide-react';
 import type { CompanyProfile, Expense } from '@/lib/types';
 import {
-  SHARE_KIND_LABEL, llpAccountLabel, packPaidLines, type MonthPack, type PackLine,
+  SHARE_KIND_LABEL, llpAccountLabel, type MonthPack, type PackLine,
 } from '@/lib/gst-compliance';
-import { csvEscape, fmtDate, money, monthLabelLong } from '@/lib/format';
+import { BASIS_META, type ExportBasis } from '@/lib/gst-export';
+import { fmtDate, money, monthLabelLong } from '@/lib/format';
 import { fxInr } from '@/lib/finance';
-import { STATUS_LABEL, Spinner, toast } from '@/components/ui';
-import { downloadBlob, zipStore } from '@/lib/zip';
+import { InfoHint, Spinner, toast } from '@/components/ui';
 
 function LineTable({
   lines, collectedLabel, extra, dateOf,
@@ -60,54 +60,6 @@ function LineTable({
   );
 }
 
-function safeZipName(invoiceNumber: string, used: Set<string>) {
-  const base = `${invoiceNumber}.pdf`.replace(/[^\w.-]/g, '_');
-  if (!used.has(base)) { used.add(base); return base; }
-  let n = 2;
-  let name = `${invoiceNumber}-${n}.pdf`.replace(/[^\w.-]/g, '_');
-  while (used.has(name)) {
-    n += 1;
-    name = `${invoiceNumber}-${n}.pdf`.replace(/[^\w.-]/g, '_');
-  }
-  used.add(name);
-  return name;
-}
-
-async function zipPaidInvoices(
-  lines: PackLine[],
-  periodKey: string,
-  onProgress: (done: number, total: number) => void,
-) {
-  const used = new Set<string>();
-  const files: { name: string; data: Uint8Array }[] = [];
-  const failed: string[] = [];
-  const index = [[
-    'Invoice', 'Invoice date', 'Payment received', 'Client', 'GSTIN', 'Status', 'Taxable', 'GST', 'Total',
-  ]];
-
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i];
-    const name = safeZipName(l.invoice.invoice_number, used);
-    index.push([
-      l.invoice.invoice_number, l.invoiceDate, l.collectedOn ?? '', l.clientName, l.gstin,
-      STATUS_LABEL[l.invoice.status] ?? l.invoice.status,
-      l.taxable.toFixed(2), l.tax.toFixed(2), l.total.toFixed(2),
-    ]);
-    const res = await fetch(`/api/invoices/${l.invoice.id}/pdf`);
-    if (!res.ok) {
-      failed.push(l.invoice.invoice_number);
-    } else {
-      files.push({ name, data: new Uint8Array(await res.arrayBuffer()) });
-    }
-    onProgress(i + 1, lines.length);
-  }
-
-  const csv = `\uFEFF${index.map((row) => row.map(csvEscape).join(',')).join('\n')}`;
-  files.unshift({ name: '_index.csv', data: new TextEncoder().encode(csv) });
-  downloadBlob(`invoices-${periodKey}.zip`, zipStore(files));
-  return failed;
-}
-
 function Section({
   icon, title, count, tone, children, empty,
 }: {
@@ -129,10 +81,18 @@ function Section({
 }
 
 export default function GstMonthPack({
-  pack, profile, onCopy, onCsv, onGstr1, onRecord,
+  pack, profile, basis, onBasisChange, downloadCount, zipProgress,
+  onDownload, onMoreMonths, onCopy, onCsv, onGstr1, onRecord,
 }: {
   pack: MonthPack;
   profile: CompanyProfile | null;
+  /** Which date the download is measured by. Never changes the tax arithmetic. */
+  basis: ExportBasis;
+  onBasisChange: (b: ExportBasis) => void;
+  downloadCount: number;
+  zipProgress: { done: number; total: number } | null;
+  onDownload: () => void;
+  onMoreMonths: () => void;
   onCopy: () => void;
   onCsv: () => void;
   onGstr1: () => void;
@@ -141,24 +101,8 @@ export default function GstMonthPack({
   const llp = llpAccountLabel(profile);
   const t = pack.totals;
   const hold = pack.issuedUnpaid.length + pack.earlierUnpaid.length;
-  const paidLines = packPaidLines(pack);
   const heading = /^\d{4}-\d{2}$/.test(pack.key) ? monthLabelLong(pack.key) : pack.label;
-  const [zipProg, setZipProg] = useState<{ done: number; total: number } | null>(null);
-
-  async function downloadZip() {
-    if (!paidLines.length) return toast('No payments landed this period.', 'info');
-    if (zipProg) return;
-    setZipProg({ done: 0, total: paidLines.length });
-    try {
-      const failed = await zipPaidInvoices(paidLines, pack.key, (done, total) => setZipProg({ done, total }));
-      if (failed.length) toast(`Packed with ${failed.length} missing: ${failed.join(', ')}`, 'error');
-      else toast(`Packed ${paidLines.length} paid invoice${paidLines.length === 1 ? '' : 's'} for ${heading}`);
-    } catch (e) {
-      toast(e instanceof Error ? e.message : 'Could not pack invoices', 'error');
-    } finally {
-      setZipProg(null);
-    }
-  }
+  const zipping = zipProgress !== null;
 
   return (
     <div className="card overflow-hidden">
@@ -168,26 +112,63 @@ export default function GstMonthPack({
             <p className="label-mono">Filing period</p>
             <h2 className="mt-1 font-display text-[26px] leading-none text-white">{heading}</h2>
             <p className="mt-1.5 max-w-md text-[12.5px] leading-snug text-chrome">
-              Only invoices whose payment landed this month. GST is due on money in the bank, not on the invoice date.
+              The figures below are always on money received — that is when GST falls due. The
+              download follows the toggle.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="btn-primary btn-sm" onClick={downloadZip} disabled={!!zipProg || paidLines.length === 0}>
-              {zipProg ? <Spinner size={14} /> : <Archive size={14} />}
-              {zipProg
-                ? `Packing ${zipProg.done}/${zipProg.total}…`
-                : `Download ${paidLines.length} invoice${paidLines.length === 1 ? '' : 's'}`}
+            <button className="btn-primary btn-sm" onClick={onDownload} disabled={zipping || downloadCount === 0}>
+              {zipping ? <Spinner size={14} /> : <Archive size={14} />}
+              {zipping
+                ? `Packing ${zipProgress!.done}/${zipProgress!.total}…`
+                : `Download ${downloadCount} invoice${downloadCount === 1 ? '' : 's'}`}
+            </button>
+            <button className="btn-ghost btn-sm" onClick={onMoreMonths} disabled={zipping}>
+              <CalendarPlus size={14} /> More months
             </button>
             <button className="btn-ghost btn-sm" onClick={onCopy}><Copy size={14} /> Copy briefing</button>
             <button className="btn-ghost btn-sm" onClick={onCsv}><Download size={14} /> Pack CSV</button>
-            <button className="btn-ghost btn-sm" onClick={onGstr1}><Download size={14} /> GSTR-1 CSV</button>
+            <button className="btn-ghost btn-sm" onClick={onGstr1}
+              title="Always on money received — a GST return cannot be filed on an invoice-date basis.">
+              <Download size={14} /> GSTR-1 CSV
+            </button>
             <button className="btn-ghost btn-sm" onClick={onRecord}><Landmark size={14} /> Record payment</button>
           </div>
         </div>
 
+        {/* The basis switch: two words, always visible, like a theme toggle. */}
+        <div className="mt-3.5 flex flex-wrap items-center gap-2.5">
+          <span className="flex items-center gap-1.5">
+            <span className="label-mono">Download by</span>
+            <InfoHint
+              side="bottom"
+              tip="Invoice date gives your income-tax CA everything you billed that month, paid or not. Payment received gives the GST view — only money that actually landed. The tax totals on this page never change; only the download does."
+            />
+          </span>
+          <div role="radiogroup" aria-label="Download date basis"
+            className="inline-flex items-center gap-0.5 rounded-[8px] border border-line bg-ink-800/60 p-[3px]">
+            {(['raised', 'paid'] as ExportBasis[]).map((b) => (
+              <button
+                key={b}
+                role="radio"
+                aria-checked={basis === b}
+                disabled={zipping}
+                onClick={() => onBasisChange(b)}
+                title={BASIS_META[b].blurb}
+                className={`rounded-[5px] px-2.5 py-[5px] text-[12px] font-semibold transition ${
+                  basis === b
+                    ? 'bg-ink-500 text-white shadow-[0_1px_0_0_rgba(255,255,255,.08)_inset]'
+                    : 'text-chrome hover:text-white'}`}>
+                {BASIS_META[b].label}
+              </button>
+            ))}
+          </div>
+          <span className="text-[11.5px] text-chrome-dark">for your {BASIS_META[basis].who}</span>
+        </div>
+
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            ['Paid invoices', String(paidLines.length), 'text-white'],
+            ['Paid invoices', String(pack.share.length + pack.zeroRated.length + pack.partial.length), 'text-white'],
             ['Tax collected', money(t.output), 'text-white'],
             ['Claim back', money(t.itc), 'text-emerald-300'],
             ['Pay from company', money(t.netLlp), 'text-amber-300'],

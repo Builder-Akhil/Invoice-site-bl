@@ -281,10 +281,8 @@ const STATUS_STYLES: Record<string, string> = {
   accepted: 'bg-emerald-500/15 text-emerald-300 ring-1 ring-inset ring-emerald-500/30',
   declined: 'bg-red-500/15 text-red-300 ring-1 ring-inset ring-red-500/30',
 };
-export const STATUS_LABEL: Record<string, string> = {
-  draft: 'Draft', sent: 'Sent', viewed: 'Viewed', partially_paid: 'Part paid',
-  paid: 'Paid', overdue: 'Overdue', cancelled: 'Cancelled', accepted: 'Accepted', declined: 'Declined',
-};
+import { STATUS_LABEL } from '@/lib/invoice-status';
+export { STATUS_LABEL };
 export const StatusPill = ({ status }: { status: string }) => (
   <span className={`pill ${STATUS_STYLES[status] ?? STATUS_STYLES.draft}`}>{STATUS_LABEL[status] ?? status}</span>
 );
